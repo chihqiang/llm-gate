@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import {
   UserToken,
   tokenListApi,
@@ -7,11 +8,12 @@ import {
   tokenUpdateApi,
   tokenDeleteApi,
   tokenDetailApi,
+  tokenRevealApi,
 } from "@/api/llm"
 import { TokenForm } from "@/components/forms/token-form"
 import { Crud, SearchField } from "@/components/widgets/crud"
 import { DataListColumn } from "@/components/widgets/data-list"
-import { Copy } from "lucide-react"
+import { Copy, Check } from "lucide-react"
 import { toast } from "sonner"
 
 const searchFields: SearchField[] = [
@@ -22,6 +24,33 @@ const searchFields: SearchField[] = [
     placeholder: "搜索名称",
   },
 ]
+
+function CopyButton({ tokenId }: { tokenId: number }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      const key = await tokenRevealApi(tokenId)
+      await navigator.clipboard.writeText(key)
+      setCopied(true)
+      toast.success("已复制到剪贴板")
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast.error("复制失败")
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="shrink-0 text-muted-foreground hover:text-foreground"
+      title="复制 Key"
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  )
+}
 
 const columns: DataListColumn<UserToken>[] = [
   {
@@ -36,24 +65,14 @@ const columns: DataListColumn<UserToken>[] = [
     cell: (row) => row.name,
   },
   {
-    key: "key",
+    key: "key_masked",
     header: "Key",
     cell: (row) => (
       <div className="flex items-center gap-1.5">
         <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-          {row.key}
+          {row.key_masked}
         </code>
-        <button
-          type="button"
-          onClick={() => {
-            navigator.clipboard.writeText(row.key)
-            toast.success("已复制到剪贴板")
-          }}
-          className="shrink-0 text-muted-foreground hover:text-foreground"
-          title="复制 Key"
-        >
-          <Copy className="h-3.5 w-3.5" />
-        </button>
+        <CopyButton tokenId={row.id} />
       </div>
     ),
   },
@@ -79,6 +98,7 @@ const defaultFormData: UserToken = {
   account_id: 0,
   name: "",
   key: "",
+  key_masked: "",
   quota: 0,
   status: true,
   expired_at: null,

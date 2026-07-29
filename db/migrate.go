@@ -139,6 +139,7 @@ func seed(db *gorm.DB) error {
 			model.Menu{MenuType: 3, Name: "创建Token", APIURL: "/api/v1/llm/tokens", APIMethod: "POST", Sort: 3, Visible: true, Status: true, Remark: "创建Token"},
 			model.Menu{MenuType: 3, Name: "更新Token", APIURL: "/api/v1/llm/tokens/*", APIMethod: "PUT", Sort: 4, Visible: true, Status: true, Remark: "更新Token"},
 			model.Menu{MenuType: 3, Name: "删除Token", APIURL: "/api/v1/llm/tokens/*", APIMethod: "DELETE", Sort: 5, Visible: true, Status: true, Remark: "删除Token"},
+			model.Menu{MenuType: 3, Name: "Token密钥", APIURL: "/api/v1/llm/tokens/*/reveal", APIMethod: "GET", Sort: 6, Visible: true, Status: true, Remark: "查看Token完整密钥"},
 		); err != nil {
 			return err
 		}

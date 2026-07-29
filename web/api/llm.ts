@@ -149,6 +149,7 @@ export interface UserToken {
   account_id: number
   name: string
   key: string
+  key_masked: string
   quota: number
   status: boolean
   expired_at: string | null
@@ -188,6 +189,11 @@ export async function tokenUpdateApi(
 
 export async function tokenDeleteApi(id: number): Promise<void> {
   return await request.delete(`/api/v1/llm/tokens/${id}`)
+}
+
+export async function tokenRevealApi(id: number): Promise<string> {
+  const res = await request.get<{ key: string }>(`/api/v1/llm/tokens/${id}/reveal`)
+  return res.key
 }
 
 // ==================== Usage Log ====================

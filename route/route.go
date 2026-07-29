@@ -105,6 +105,7 @@ func Register(server *httpx.Server, j *jwt.JWT,
 		{Method: "POST", Path: "/llm/tokens", Handler: tokenHandler.Create},
 		{Method: "PUT", Path: "/llm/tokens/{id}", Handler: tokenHandler.Update},
 		{Method: "DELETE", Path: "/llm/tokens/{id}", Handler: tokenHandler.Delete},
+		{Method: "GET", Path: "/llm/tokens/{id}/reveal", Handler: tokenHandler.Reveal},
 	})
 
 	auth.AddRoutes([]httpx.Route{

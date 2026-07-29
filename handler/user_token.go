@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"chihqiang/llm-gate/logic"
+	"chihqiang/llm-gate/middleware"
 
 	"github.com/chihqiang/infra-go/httpx"
 )
@@ -98,4 +99,26 @@ func (h *TokenHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.OkJSON(w, nil)
+}
+
+func (h *TokenHandler) Reveal(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		return
+	}
+
+	account := middleware.AccountFromContext(r.Context())
+	if account == nil {
+		httpx.WriteHTTPError(w, httpx.CodeUnauthorized, "未登录")
+		return
+	}
+
+	key, err := h.svc.RevealKey(id, account.ID)
+	if err != nil {
+		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		return
+	}
+
+	httpx.OkJSON(w, map[string]string{"key": key})
 }

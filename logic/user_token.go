@@ -25,9 +25,44 @@ type TokenListRequest struct {
 	AccountID int64 `form:"account_id"`
 }
 
+type TokenVO struct {
+	ID        int64      `json:"id"`
+	AccountID int64      `json:"account_id"`
+	Name      string     `json:"name"`
+	Key       string     `json:"key"`
+	KeyMasked string     `json:"key_masked"`
+	Quota     int64      `json:"quota"`
+	Status    bool       `json:"status"`
+	ExpiredAt *time.Time `json:"expired_at"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
 type TokenListResponse struct {
-	Data  []model.UserToken `json:"data"`
-	Total int64             `json:"total"`
+	Data  []TokenVO `json:"data"`
+	Total int64     `json:"total"`
+}
+
+func maskKey(key string) string {
+	if len(key) <= 8 {
+		return key
+	}
+	return key[:6] + "****" + key[len(key)-4:]
+}
+
+func toTokenVO(t model.UserToken) TokenVO {
+	return TokenVO{
+		ID:        t.ID,
+		AccountID: t.AccountID,
+		Name:      t.Name,
+		Key:       t.Key,
+		KeyMasked: maskKey(t.Key),
+		Quota:     t.Quota,
+		Status:    t.Status,
+		ExpiredAt: t.ExpiredAt,
+		CreatedAt: t.CreatedAt,
+		UpdatedAt: t.UpdatedAt,
+	}
 }
 
 func (s *TokenLogic) List(req *TokenListRequest) (*TokenListResponse, error) {
@@ -48,15 +83,21 @@ func (s *TokenLogic) List(req *TokenListRequest) (*TokenListResponse, error) {
 		return nil, err
 	}
 
-	return &TokenListResponse{Data: tokens, Total: total}, nil
+	data := make([]TokenVO, len(tokens))
+	for i, t := range tokens {
+		data[i] = toTokenVO(t)
+	}
+
+	return &TokenListResponse{Data: data, Total: total}, nil
 }
 
-func (s *TokenLogic) GetByID(id int64) (*model.UserToken, error) {
+func (s *TokenLogic) GetByID(id int64) (*TokenVO, error) {
 	var token model.UserToken
 	if err := s.db.First(&token, id).Error; err != nil {
 		return nil, err
 	}
-	return &token, nil
+	vo := toTokenVO(token)
+	return &vo, nil
 }
 
 func (s *TokenLogic) GetByKey(key string) (*model.UserToken, error) {
@@ -74,14 +115,14 @@ type TokenCreateRequest struct {
 }
 
 func generateTokenKey() (string, error) {
-	b := make([]byte, 32)
+	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("sk-%s", hex.EncodeToString(b)), nil
 }
 
-func (s *TokenLogic) Create(req *TokenCreateRequest) (*model.UserToken, error) {
+func (s *TokenLogic) Create(req *TokenCreateRequest) (*TokenVO, error) {
 	key, err := generateTokenKey()
 	if err != nil {
 		return nil, err
@@ -97,7 +138,8 @@ func (s *TokenLogic) Create(req *TokenCreateRequest) (*model.UserToken, error) {
 	if err := s.db.Create(&token).Error; err != nil {
 		return nil, err
 	}
-	return &token, nil
+	vo := toTokenVO(token)
+	return &vo, nil
 }
 
 type TokenUpdateRequest struct {
@@ -107,7 +149,7 @@ type TokenUpdateRequest struct {
 	Status bool   `json:"status"`
 }
 
-func (s *TokenLogic) Update(req *TokenUpdateRequest) (*model.UserToken, error) {
+func (s *TokenLogic) Update(req *TokenUpdateRequest) (*TokenVO, error) {
 	updates := map[string]interface{}{
 		"name":   req.Name,
 		"quota":  req.Quota,
@@ -121,6 +163,17 @@ func (s *TokenLogic) Update(req *TokenUpdateRequest) (*model.UserToken, error) {
 
 func (s *TokenLogic) Delete(id int64) error {
 	return s.db.Delete(&model.UserToken{}, id).Error
+}
+
+func (s *TokenLogic) RevealKey(id, accountID int64) (string, error) {
+	var token model.UserToken
+	if err := s.db.First(&token, id).Error; err != nil {
+		return "", fmt.Errorf("token not found")
+	}
+	if token.AccountID != accountID {
+		return "", fmt.Errorf("access denied")
+	}
+	return token.Key, nil
 }
 
 func (s *TokenLogic) DeductQuota(id int64, amount int64) error {
