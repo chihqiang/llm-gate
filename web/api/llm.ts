@@ -46,10 +46,7 @@ export async function providerCreateApi(
 export async function providerUpdateApi(
   data: Partial<Provider> & { id: number }
 ): Promise<Provider> {
-  return await request.put<Provider>(
-    `/api/v1/llm/providers/${data.id}`,
-    data
-  )
+  return await request.put<Provider>(`/api/v1/llm/providers/${data.id}`, data)
 }
 
 export async function providerDeleteApi(id: number): Promise<void> {
@@ -66,8 +63,12 @@ export interface SyncModelsPreview {
   models: UpstreamModel[]
 }
 
-export async function providerPreviewSyncModelsApi(id: number): Promise<SyncModelsPreview> {
-  return await request.get<SyncModelsPreview>(`/api/v1/llm/providers/${id}/sync-models/preview`)
+export async function providerPreviewSyncModelsApi(
+  id: number
+): Promise<SyncModelsPreview> {
+  return await request.get<SyncModelsPreview>(
+    `/api/v1/llm/providers/${id}/sync-models/preview`
+  )
 }
 
 export interface SyncModelsResult {
@@ -77,8 +78,14 @@ export interface SyncModelsResult {
   models: string[]
 }
 
-export async function providerSyncModelsApi(id: number, models: string[]): Promise<SyncModelsResult> {
-  return await request.post<SyncModelsResult>(`/api/v1/llm/providers/${id}/sync-models`, { models })
+export async function providerSyncModelsApi(
+  id: number,
+  models: string[]
+): Promise<SyncModelsResult> {
+  return await request.post<SyncModelsResult>(
+    `/api/v1/llm/providers/${id}/sync-models`,
+    { models }
+  )
 }
 
 // ==================== Model Config ====================
@@ -128,10 +135,7 @@ export async function modelCreateApi(
 export async function modelUpdateApi(
   data: Partial<ModelConfig> & { id: number }
 ): Promise<ModelConfig> {
-  return await request.put<ModelConfig>(
-    `/api/v1/llm/models/${data.id}`,
-    data
-  )
+  return await request.put<ModelConfig>(`/api/v1/llm/models/${data.id}`, data)
 }
 
 export async function modelDeleteApi(id: number): Promise<void> {
@@ -179,10 +183,7 @@ export async function tokenCreateApi(
 export async function tokenUpdateApi(
   data: Partial<UserToken> & { id: number }
 ): Promise<UserToken> {
-  return await request.put<UserToken>(
-    `/api/v1/llm/tokens/${data.id}`,
-    data
-  )
+  return await request.put<UserToken>(`/api/v1/llm/tokens/${data.id}`, data)
 }
 
 export async function tokenDeleteApi(id: number): Promise<void> {
@@ -203,6 +204,8 @@ export interface UsageLog {
   quota_cost: number
   request_id: string
   created_at: string
+  account_name: string
+  token_name: string
 }
 
 export interface UsageStat {

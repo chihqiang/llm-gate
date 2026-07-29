@@ -4,7 +4,11 @@ import { useEffect, useState } from "react"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { LCheckbox, LSelect, LSelectOption } from "@/components/widgets/form-fields"
+import {
+  LCheckbox,
+  LSelect,
+  LSelectOption,
+} from "@/components/widgets/form-fields"
 import { providerAllListApi } from "@/api/llm"
 import type { ModelConfig } from "@/api/llm"
 

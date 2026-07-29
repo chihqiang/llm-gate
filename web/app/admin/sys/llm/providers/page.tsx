@@ -16,7 +16,14 @@ import { ProviderForm } from "@/components/forms/provider-form"
 import { Crud, SearchField } from "@/components/widgets/crud"
 import { DataListColumn } from "@/components/widgets/data-list"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -96,7 +103,9 @@ export default function ProvidersPage() {
     try {
       const preview = await providerPreviewSyncModelsApi(provider.id)
       setUpstreamModels(preview.models)
-      setSelected(new Set(preview.models.filter((m) => !m.exists).map((m) => m.id)))
+      setSelected(
+        new Set(preview.models.filter((m) => !m.exists).map((m) => m.id))
+      )
     } catch {
       toast.error("获取上游模型列表失败")
       setDialogOpen(false)
@@ -109,8 +118,13 @@ export default function ProvidersPage() {
     if (!currentProvider) return
     setSyncing(true)
     try {
-      const result = await providerSyncModelsApi(currentProvider.id, Array.from(selected))
-      toast.success(`${currentProvider.name}: 同步完成，新增 ${result.created} 个，跳过 ${result.skipped} 个`)
+      const result = await providerSyncModelsApi(
+        currentProvider.id,
+        Array.from(selected)
+      )
+      toast.success(
+        `${currentProvider.name}: 同步完成，新增 ${result.created} 个，跳过 ${result.skipped} 个`
+      )
       setDialogOpen(false)
     } catch {
       toast.error(`${currentProvider.name}: 同步失败`)
@@ -177,7 +191,7 @@ export default function ProvidersPage() {
       />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
+        <DialogContent className="flex max-h-[80vh] max-w-lg flex-col">
           <DialogHeader>
             <DialogTitle>同步模型 - {currentProvider?.name}</DialogTitle>
             <DialogDescription>选择要同步到本地的上游模型</DialogDescription>
@@ -191,42 +205,51 @@ export default function ProvidersPage() {
             />
           </div>
 
-          <div className="flex-1 overflow-y-auto min-h-0 space-y-1">
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
             {loading ? (
-              <div className="text-center text-muted-foreground py-8">加载中...</div>
+              <div className="py-8 text-center text-muted-foreground">
+                加载中...
+              </div>
             ) : filteredModels.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8">
+              <div className="py-8 text-center text-muted-foreground">
                 {search ? "无匹配模型" : "暂无上游模型"}
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-2 px-1 pb-1 border-b">
+                <div className="flex items-center gap-2 border-b px-1 pb-1">
                   <Checkbox
                     id="select-all"
                     checked={filteredModels.length > 0 && allFilteredSelected}
                     onCheckedChange={(checked) => toggleAll(checked === true)}
                   />
-                  <Label htmlFor="select-all" className="text-sm text-muted-foreground">
+                  <Label
+                    htmlFor="select-all"
+                    className="text-sm text-muted-foreground"
+                  >
                     全选当前列表
                   </Label>
                 </div>
                 {filteredModels.map((m) => (
                   <div
                     key={m.id}
-                    className="flex items-center gap-2 px-1 py-1.5 hover:bg-muted rounded-sm"
+                    className="flex items-center gap-2 rounded-sm px-1 py-1.5 hover:bg-muted"
                   >
                     <Checkbox
                       id={`model-${m.id}`}
                       checked={selected.has(m.id)}
-                      onCheckedChange={(checked) => toggleOne(m.id, checked === true)}
+                      onCheckedChange={(checked) =>
+                        toggleOne(m.id, checked === true)
+                      }
                     />
                     <Label
                       htmlFor={`model-${m.id}`}
-                      className={`text-sm flex-1 cursor-pointer ${m.exists ? "text-muted-foreground line-through" : ""}`}
+                      className={`flex-1 cursor-pointer text-sm ${m.exists ? "text-muted-foreground line-through" : ""}`}
                     >
                       {m.id}
                       {m.exists && (
-                        <span className="ml-2 text-xs text-muted-foreground">(已存在)</span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          (已存在)
+                        </span>
                       )}
                     </Label>
                   </div>
@@ -239,7 +262,10 @@ export default function ProvidersPage() {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               取消
             </Button>
-            <Button onClick={handleSync} disabled={syncing || selected.size === 0}>
+            <Button
+              onClick={handleSync}
+              disabled={syncing || selected.size === 0}
+            >
               {syncing ? "同步中..." : `同步 (${selected.size})`}
             </Button>
           </DialogFooter>

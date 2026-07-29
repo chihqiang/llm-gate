@@ -45,7 +45,11 @@ export function AuthGuard({ children }: AuthGuardProps) {
     if (redirectedRef.current) return
 
     // /admin/dashboard 始终允许访问
-    if (pathname === "/admin/dashboard" || pathname === "/admin" || pathname === "/") {
+    if (
+      pathname === "/admin/dashboard" ||
+      pathname === "/admin" ||
+      pathname === "/"
+    ) {
       return
     }
 

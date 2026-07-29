@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
-import { LCheckbox, LSelect, LSelectOption } from "@/components/widgets/form-fields"
+import {
+  LCheckbox,
+  LSelect,
+  LSelectOption,
+} from "@/components/widgets/form-fields"
 import { accountListApi } from "@/api/account"
 import type { UserToken } from "@/api/llm"
 

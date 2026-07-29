@@ -9,10 +9,14 @@ import (
 )
 
 type DashboardStats struct {
-	TotalAccounts int64  `json:"total_accounts"`
-	TodayVisits   int64  `json:"today_visits"`
-	ActiveAccount int64  `json:"active_accounts"`
-	SystemStatus  string `json:"system_status"`
+	TotalRequests int64 `json:"total_requests"`
+	TodayRequests int64 `json:"today_requests"`
+	TotalTokens   int64 `json:"total_tokens"`
+	TodayTokens   int64 `json:"today_tokens"`
+	TotalQuota    int64 `json:"total_quota"`
+	ActiveTokens  int64 `json:"active_tokens"`
+	TotalProviders int64 `json:"total_providers"`
+	TotalModels   int64 `json:"total_models"`
 }
 
 type DashboardLogic struct {
@@ -24,30 +28,41 @@ func NewDashboardLogic(db *gorm.DB) *DashboardLogic {
 }
 
 func (s *DashboardLogic) GetStats() (*DashboardStats, error) {
-	stats := &DashboardStats{SystemStatus: "正常"}
-
-	var totalAccounts int64
-	if err := s.db.Model(&model.Account{}).Count(&totalAccounts).Error; err != nil {
-		return nil, err
-	}
-	stats.TotalAccounts = totalAccounts
+	stats := &DashboardStats{}
 
 	todayStart := time.Now().Truncate(24 * time.Hour)
-	var todayVisits int64
-	if err := s.db.Model(&model.Log{}).Where("created_at >= ?", todayStart).Count(&todayVisits).Error; err != nil {
-		return nil, err
-	}
-	stats.TodayVisits = todayVisits
 
-	sevenDaysAgo := time.Now().AddDate(0, 0, -7)
-	var activeAccount int64
-	if err := s.db.Model(&model.Log{}).
-		Where("created_at >= ?", sevenDaysAgo).
-		Distinct("account_id").
-		Count(&activeAccount).Error; err != nil {
-		return nil, err
-	}
-	stats.ActiveAccount = activeAccount
+	var totalRequests int64
+	s.db.Model(&model.UsageLog{}).Count(&totalRequests)
+	stats.TotalRequests = totalRequests
+
+	var todayRequests int64
+	s.db.Model(&model.UsageLog{}).Where("created_at >= ?", todayStart).Count(&todayRequests)
+	stats.TodayRequests = todayRequests
+
+	var totalTokens int64
+	s.db.Model(&model.UsageLog{}).Select("COALESCE(SUM(total_tokens), 0)").Scan(&totalTokens)
+	stats.TotalTokens = totalTokens
+
+	var todayTokens int64
+	s.db.Model(&model.UsageLog{}).Select("COALESCE(SUM(total_tokens), 0)").Where("created_at >= ?", todayStart).Scan(&todayTokens)
+	stats.TodayTokens = todayTokens
+
+	var totalQuota int64
+	s.db.Model(&model.UsageLog{}).Select("COALESCE(SUM(quota_cost), 0)").Scan(&totalQuota)
+	stats.TotalQuota = totalQuota
+
+	var activeTokens int64
+	s.db.Model(&model.UserToken{}).Where("status = ? AND (expired_at IS NULL OR expired_at > ?)", true, time.Now()).Count(&activeTokens)
+	stats.ActiveTokens = activeTokens
+
+	var totalProviders int64
+	s.db.Model(&model.Provider{}).Count(&totalProviders)
+	stats.TotalProviders = totalProviders
+
+	var totalModels int64
+	s.db.Model(&model.ModelConfig{}).Count(&totalModels)
+	stats.TotalModels = totalModels
 
 	return stats, nil
 }

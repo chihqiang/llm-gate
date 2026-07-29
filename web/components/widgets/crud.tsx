@@ -758,46 +758,52 @@ export function Crud<T extends HasId, FormData = T>(
     (item: T) => (
       <div className="flex justify-end gap-1">
         {extraActions && extraActions(item)}
-        {FormComponent && updateApi && createApi && (!updatePermission || hasMenuApiPermission("PUT", updatePermission)) && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openEdit(item)
-                  }}
-                >
-                  <Edit className="size-3.5" />
-                </Button>
-              }
-            />
-            <TooltipContent>编辑</TooltipContent>
-          </Tooltip>
-        )}
-        {deleteApi && (!deletePermission || hasMenuApiPermission("DELETE", deletePermission)) && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openDelete(item)
-                  }}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              }
-            />
-            <TooltipContent>删除</TooltipContent>
-          </Tooltip>
-        )}
+        {FormComponent &&
+          updateApi &&
+          createApi &&
+          (!updatePermission ||
+            hasMenuApiPermission("PUT", updatePermission)) && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openEdit(item)
+                    }}
+                  >
+                    <Edit className="size-3.5" />
+                  </Button>
+                }
+              />
+              <TooltipContent>编辑</TooltipContent>
+            </Tooltip>
+          )}
+        {deleteApi &&
+          (!deletePermission ||
+            hasMenuApiPermission("DELETE", deletePermission)) && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openDelete(item)
+                    }}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                }
+              />
+              <TooltipContent>删除</TooltipContent>
+            </Tooltip>
+          )}
       </div>
     ),
     [
@@ -895,23 +901,29 @@ export function Crud<T extends HasId, FormData = T>(
       {/* 操作栏 */}
       {(hasFormDialog || (selectable && batchDelete && deleteApi)) && (
         <div className="flex items-center gap-2 border-b px-4 py-2.5">
-          {hasFormDialog && (!createPermission || hasMenuApiPermission("POST", createPermission)) && (
-            <Button onClick={openAdd} size="sm">
-              <Plus className="size-3.5" />
-              新增{entityName}
-            </Button>
-          )}
-          {selectable && batchDelete && deleteApi && (!deletePermission || hasMenuApiPermission("DELETE", deletePermission)) && (
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleBatchDelete}
-              disabled={selectedKeys.size === 0}
-            >
-              <Trash2 className="size-3.5" />
-              批量删除 ({selectedKeys.size})
-            </Button>
-          )}
+          {hasFormDialog &&
+            (!createPermission ||
+              hasMenuApiPermission("POST", createPermission)) && (
+              <Button onClick={openAdd} size="sm">
+                <Plus className="size-3.5" />
+                新增{entityName}
+              </Button>
+            )}
+          {selectable &&
+            batchDelete &&
+            deleteApi &&
+            (!deletePermission ||
+              hasMenuApiPermission("DELETE", deletePermission)) && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleBatchDelete}
+                disabled={selectedKeys.size === 0}
+              >
+                <Trash2 className="size-3.5" />
+                批量删除 ({selectedKeys.size})
+              </Button>
+            )}
         </div>
       )}
 

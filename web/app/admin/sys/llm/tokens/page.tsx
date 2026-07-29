@@ -40,7 +40,7 @@ const columns: DataListColumn<UserToken>[] = [
     header: "Key",
     cell: (row) => (
       <div className="flex items-center gap-1.5">
-        <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
+        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
           {row.key}
         </code>
         <button

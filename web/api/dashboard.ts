@@ -1,10 +1,14 @@
 import request from "@/lib/request"
 
 export interface DashboardStats {
-  total_accounts: number
-  today_visits: number
-  active_accounts: number
-  system_status: string
+  total_requests: number
+  today_requests: number
+  total_tokens: number
+  today_tokens: number
+  total_quota: number
+  active_tokens: number
+  total_providers: number
+  total_models: number
 }
 
 export async function dashboardStatsApi(): Promise<DashboardStats> {

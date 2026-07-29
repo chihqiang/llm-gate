@@ -25,35 +25,43 @@ type UsageListRequest struct {
 	EndDate   string `form:"end_date"`
 }
 
+type UsageLogVO struct {
+	model.UsageLog
+	AccountName string `json:"account_name"`
+	TokenName   string `json:"token_name"`
+}
+
 type UsageListResponse struct {
-	Data  []model.UsageLog `json:"data"`
-	Total int64            `json:"total"`
+	Data  []UsageLogVO `json:"data"`
+	Total int64        `json:"total"`
 }
 
 func (s *UsageLogic) List(req *UsageListRequest) (*UsageListResponse, error) {
-	var logs []model.UsageLog
+	var logs []UsageLogVO
 	var total int64
 
-	query := s.db.Model(&model.UsageLog{})
+	query := s.db.Model(&model.UsageLog{}).
+		Select("llm_usage_logs.*, COALESCE(sa.name, '') as account_name, COALESCE(lt.name, '') as token_name").
+		Joins("LEFT JOIN sys_accounts sa ON sa.id = llm_usage_logs.account_id").
+		Joins("LEFT JOIN llm_user_tokens lt ON lt.id = llm_usage_logs.token_id")
 	if req.AccountID > 0 {
-		query = query.Where("account_id = ?", req.AccountID)
+		query = query.Where("llm_usage_logs.account_id = ?", req.AccountID)
 	}
 	if req.ModelName != "" {
-		query = query.Where("model_name = ?", req.ModelName)
+		query = query.Where("llm_usage_logs.model_name = ?", req.ModelName)
 	}
 	if req.StartDate != "" {
-		query = query.Where("created_at >= ?", req.StartDate)
+		query = query.Where("llm_usage_logs.created_at >= ?", req.StartDate)
 	}
 	if req.EndDate != "" {
-		query = query.Where("created_at <= ?", req.EndDate+" 23:59:59")
+		query = query.Where("llm_usage_logs.created_at <= ?", req.EndDate+" 23:59:59")
 	}
-
 	if err := query.Count(&total).Error; err != nil {
 		return nil, err
 	}
 
 	offset := (req.Page - 1) * req.Size
-	if err := query.Offset(offset).Limit(req.Size).Order("id DESC").Find(&logs).Error; err != nil {
+	if err := query.Offset(offset).Limit(req.Size).Order("llm_usage_logs.id DESC").Find(&logs).Error; err != nil {
 		return nil, err
 	}
 
