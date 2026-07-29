@@ -17,6 +17,10 @@ jwt:
   refresh_token_expire: 168h
   algorithm: HS256
 
+relay:
+  timeout: 120
+  max_body_mb: 32
+
 logger:
   level: 0
   encoding: json

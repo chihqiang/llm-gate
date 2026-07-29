@@ -118,6 +118,7 @@ import {
   GitCommit,
   GitMerge,
   GitPullRequest,
+  BarChart3,
   ExternalLinkIcon,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
@@ -243,6 +244,7 @@ const iconMap: Record<string, LucideIcon> = {
   GitCommit,
   GitMerge,
   GitPullRequest,
+  BarChart3,
 }
 
 interface IconProps {

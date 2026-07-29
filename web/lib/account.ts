@@ -86,19 +86,20 @@ export interface AuthMenuTree extends Menu {
   children: AuthMenuTree[]
 }
 
-// 构建菜单树，支持任意层级嵌套
+// 构建菜单树，支持任意层级嵌套（过滤掉按钮类型）
 export const menuTree = (menus: Menu[]): AuthMenuTree[] => {
+  const visible = menus.filter((m) => m.menu_type !== 3)
   const nodeMap = new Map<number, AuthMenuTree>()
   const roots: AuthMenuTree[] = []
 
-  menus.forEach((item) => {
+  visible.forEach((item) => {
     nodeMap.set(item.id, {
       ...item,
       children: [],
     })
   })
 
-  menus.forEach((item) => {
+  visible.forEach((item) => {
     const node = nodeMap.get(item.id)!
     if (item.pid === 0) {
       roots.push(node)

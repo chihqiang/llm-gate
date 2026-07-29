@@ -4,6 +4,7 @@ import (
 	"chihqiang/llm-gate/handler"
 	"chihqiang/llm-gate/logic"
 	"chihqiang/llm-gate/middleware"
+	"chihqiang/llm-gate/relay"
 
 	"github.com/chihqiang/infra-go/httpx"
 	"github.com/chihqiang/infra-go/jwt"
@@ -17,8 +18,14 @@ func Register(server *httpx.Server, j *jwt.JWT,
 	roleHandler *handler.RoleHandler,
 	menuHandler *handler.MenuHandler,
 	logHandler *handler.LogHandler,
+	dashboardHandler *handler.DashboardHandler,
+
+	providerHandler *handler.ProviderHandler,
+	modelHandler *handler.ModelHandler,
+	tokenHandler *handler.TokenHandler,
+	usageHandler *handler.UsageHandler,
+	relayHandler *relay.RelayHandler,
 ) {
-	// 全局中间件
 	server.Use(httpx.WithCors("*"))
 	server.Use(httpx.WithRecovery())
 	server.Use(httpx.WithLogger())
@@ -29,10 +36,8 @@ func Register(server *httpx.Server, j *jwt.JWT,
 
 	v1 := server.Group("/api/v1")
 
-	// 公开路由
 	v1.AddRoute(httpx.Route{Method: "POST", Path: "/auth/login", Handler: authHandler.Login})
 
-	// 需要鉴权的路由
 	permMw := middleware.Permission("/api/v1/auth/me")
 	auth := v1.Group("", authMw, loadAccountMw, permMw)
 	auth.AddRoutes([]httpx.Route{
@@ -68,5 +73,48 @@ func Register(server *httpx.Server, j *jwt.JWT,
 
 	auth.AddRoutes([]httpx.Route{
 		{Method: "GET", Path: "/sys/logs", Handler: logHandler.List},
+	})
+
+	auth.AddRoutes([]httpx.Route{
+		{Method: "GET", Path: "/dashboard/stats", Handler: dashboardHandler.Stats},
+	})
+
+	auth.AddRoutes([]httpx.Route{
+		{Method: "GET", Path: "/llm/providers", Handler: providerHandler.List},
+		{Method: "GET", Path: "/llm/providers/all", Handler: providerHandler.AllList},
+		{Method: "GET", Path: "/llm/providers/{id}", Handler: providerHandler.Detail},
+		{Method: "POST", Path: "/llm/providers", Handler: providerHandler.Create},
+		{Method: "PUT", Path: "/llm/providers/{id}", Handler: providerHandler.Update},
+		{Method: "DELETE", Path: "/llm/providers/{id}", Handler: providerHandler.Delete},
+		{Method: "GET", Path: "/llm/providers/{id}/sync-models/preview", Handler: providerHandler.PreviewSyncModels},
+		{Method: "POST", Path: "/llm/providers/{id}/sync-models", Handler: providerHandler.SyncModels},
+	})
+
+	auth.AddRoutes([]httpx.Route{
+		{Method: "GET", Path: "/llm/models", Handler: modelHandler.List},
+		{Method: "GET", Path: "/llm/models/all", Handler: modelHandler.AllList},
+		{Method: "GET", Path: "/llm/models/{id}", Handler: modelHandler.Detail},
+		{Method: "POST", Path: "/llm/models", Handler: modelHandler.Create},
+		{Method: "PUT", Path: "/llm/models/{id}", Handler: modelHandler.Update},
+		{Method: "DELETE", Path: "/llm/models/{id}", Handler: modelHandler.Delete},
+	})
+
+	auth.AddRoutes([]httpx.Route{
+		{Method: "GET", Path: "/llm/tokens", Handler: tokenHandler.List},
+		{Method: "GET", Path: "/llm/tokens/{id}", Handler: tokenHandler.Detail},
+		{Method: "POST", Path: "/llm/tokens", Handler: tokenHandler.Create},
+		{Method: "PUT", Path: "/llm/tokens/{id}", Handler: tokenHandler.Update},
+		{Method: "DELETE", Path: "/llm/tokens/{id}", Handler: tokenHandler.Delete},
+	})
+
+	auth.AddRoutes([]httpx.Route{
+		{Method: "GET", Path: "/llm/usage", Handler: usageHandler.List},
+		{Method: "GET", Path: "/llm/usage/stats", Handler: usageHandler.Stats},
+	})
+
+	relayGroup := server.Group("/v1")
+	relayGroup.AddRoutes([]httpx.Route{
+		{Method: "POST", Path: "/chat/completions", Handler: relayHandler.ChatCompletions},
+		{Method: "GET", Path: "/models", Handler: relayHandler.ListModels},
 	})
 }

@@ -77,20 +77,34 @@ func methodMatch(pattern, method string) bool {
 
 // urlMatch 检查请求 URI 是否匹配权限定义的 APIURL
 //   - 非通配模式：必须完全相等
-//   - /* 通配模式：去掉 /* 后做路径段前缀匹配
-//
-// 示例：
-//
-//	/api/v1/sys/accounts      → 仅匹配 /api/v1/sys/accounts（精确）
-//	/api/v1/sys/accounts/*    → 匹配 /api/v1/sys/accounts/1, /api/v1/sys/accounts/1/edit（段前缀）
-//	/api/v1/sys/accounts/*    → 不匹配 /api/v1/sys/accounts（需要子路径）
-//	/api/v1/sys/accounts      → 不匹配 /api/v1/sys/accounts-extra（段边界保护）
+//   - /* 后缀通配：匹配任意子路径（/api/v1/accounts/* → /api/v1/accounts/1）
+//   - * 段通配：匹配路径中单个段（/api/v1/providers/*/sync-models → /api/v1/providers/1/sync-models）
 func urlMatch(pattern, uri string) bool {
+	if !strings.Contains(pattern, "*") {
+		return uri == pattern
+	}
+
+	// /* 后缀通配（原有逻辑）
 	if strings.HasSuffix(pattern, "/*") {
 		prefix := strings.TrimSuffix(pattern, "/*")
 		return strings.HasPrefix(uri, prefix) &&
 			len(uri) > len(prefix) &&
 			uri[len(prefix)] == '/'
 	}
-	return uri == pattern
+
+	// 段通配：按 / 分割，逐段比较
+	pParts := strings.Split(pattern, "/")
+	uParts := strings.Split(uri, "/")
+	if len(pParts) != len(uParts) {
+		return false
+	}
+	for i := range pParts {
+		if pParts[i] == "*" {
+			continue
+		}
+		if pParts[i] != uParts[i] {
+			return false
+		}
+	}
+	return true
 }

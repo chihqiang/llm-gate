@@ -16,7 +16,7 @@ func NewLogLogic(db *gorm.DB) *LogLogic {
 
 type LogListRequest struct {
 	Page          int    `form:"page" binding:"required,min=1"`
-	Size          int    `form:"size" binding:"required,min=1,max=100"`
+	Size          int    `form:"size" binding:"required,min=1,max=1000"`
 	RequestPath   string `form:"request_path"`
 	RequestIP     string `form:"request_ip"`
 	RequestMethod string `form:"request_method"`

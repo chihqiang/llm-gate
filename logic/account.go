@@ -17,7 +17,7 @@ func NewAccountLogic(db *gorm.DB) *AccountLogic {
 
 type AccountListRequest struct {
 	Page int `form:"page" binding:"required,min=1"`
-	Size int `form:"size" binding:"required,min=1,max=100"`
+	Size int `form:"size" binding:"required,min=1,max=1000"`
 	ID   int `form:"id"`
 }
 

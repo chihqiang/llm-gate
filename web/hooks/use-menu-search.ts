@@ -26,7 +26,7 @@ export function useMenuSearch(menuTree: AuthMenuTree[]) {
 
     const traverse = (items: AuthMenuTree[], parentName?: string) => {
       items.forEach((item) => {
-        if (item.path && item.menu_type !== 0) {
+        if (item.path) {
           result.push({
             id: item.id,
             name: item.name,
