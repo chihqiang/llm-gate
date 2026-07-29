@@ -1,0 +1,25 @@
+app:
+  name: llm-gate
+  version: 0.0.1
+
+server:
+  host: 0.0.0.0
+  port: 8080
+
+db:
+  driver: sqlite
+  database: ./data.db
+
+jwt:
+  secret: llm-gate-secret-key
+  issuer: llm-gate
+  access_token_expire: 2h
+  refresh_token_expire: 168h
+  algorithm: HS256
+
+logger:
+  level: 0
+  encoding: json
+  output:
+    - stdout
+  caller: true
