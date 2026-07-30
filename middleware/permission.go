@@ -29,6 +29,11 @@ func Permission(skipRoutes ...string) httpx.Middleware {
 				return
 			}
 
+			if IsAdmin(r.Context()) {
+				next(w, r)
+				return
+			}
+
 			ps := PermissionSetFromContext(r.Context())
 			if ps == nil || !ps.Check(r.Method, uri) {
 				logger.Warn("permission denied",

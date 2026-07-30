@@ -54,7 +54,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.svc.GetProfile(account.ID)
+	profile, err := h.svc.GetProfile(account.ID, middleware.IsAdmin(r.Context()))
 	if err != nil {
 		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return

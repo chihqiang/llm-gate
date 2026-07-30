@@ -1,17 +1,21 @@
 package logic
 
 import (
+	"errors"
+
 	"chihqiang/llm-gate/model"
 
+	"github.com/chihqiang/infra-go/logger"
 	"gorm.io/gorm"
 )
 
 type RoleLogic struct {
-	db *gorm.DB
+	db          *gorm.DB
+	adminRoleID int64
 }
 
-func NewRoleLogic(db *gorm.DB) *RoleLogic {
-	return &RoleLogic{db: db}
+func NewRoleLogic(db *gorm.DB, adminRoleID int64) *RoleLogic {
+	return &RoleLogic{db: db, adminRoleID: adminRoleID}
 }
 
 type RoleListRequest struct {
@@ -108,6 +112,11 @@ func (s *RoleLogic) Update(req *RoleUpdateRequest) (*model.Role, error) {
 }
 
 func (s *RoleLogic) Delete(id int64) error {
+	if s.adminRoleID > 0 && id == s.adminRoleID {
+		logger.Warn("role delete forbidden: admin role", logger.Int64("admin_role_id", s.adminRoleID))
+		return errors.New("不能删除超级管理员角色")
+	}
+
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var role model.Role
 		if err := tx.First(&role, id).Error; err != nil {
@@ -125,6 +134,11 @@ type RoleMenuRequest struct {
 }
 
 func (s *RoleLogic) AssociateMenus(roleID int64, menuIDs []int64) error {
+	if s.adminRoleID > 0 && roleID == s.adminRoleID {
+		logger.Warn("role associate menus forbidden: admin role", logger.Int64("admin_role_id", s.adminRoleID))
+		return errors.New("不能修改超级管理员角色的菜单权限")
+	}
+
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var role model.Role
 		if err := tx.First(&role, roleID).Error; err != nil {

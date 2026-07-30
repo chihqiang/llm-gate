@@ -83,7 +83,7 @@ func main() {
 
 	authSvc := logic.NewAuthLogic(gormDB, j, accountCache)
 	accountSvc := logic.NewAccountLogic(gormDB, accountCache)
-	roleSvc := logic.NewRoleLogic(gormDB)
+	roleSvc := logic.NewRoleLogic(gormDB, cfg.App.AdminRoleID)
 	menuSvc := logic.NewMenuLogic(gormDB)
 	logSvc := logic.NewLogLogic(gormDB)
 

@@ -119,23 +119,32 @@ type ProfileResponse struct {
 	Menus  []model.Menu `json:"menus"`
 }
 
-func (s *AuthLogic) GetProfile(accountID int64) (*ProfileResponse, error) {
+func (s *AuthLogic) GetProfile(accountID int64, isAdmin bool) (*ProfileResponse, error) {
 	var account model.Account
 	if err := s.db.Preload("Roles", func(db *gorm.DB) *gorm.DB {
-		return db.Where("status = ?", true)
-	}).Preload("Roles.Menus", func(db *gorm.DB) *gorm.DB {
 		return db.Where("status = ?", true)
 	}).First(&account, accountID).Error; err != nil {
 		return nil, err
 	}
 
-	seen := make(map[int64]bool)
 	var menus []model.Menu
-	for _, role := range account.Roles {
-		for _, menu := range role.Menus {
-			if !seen[menu.ID] {
-				seen[menu.ID] = true
-				menus = append(menus, menu)
+	if isAdmin {
+		if err := s.db.Where("status = ?", true).Order("sort ASC").Find(&menus).Error; err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.db.Preload("Roles.Menus", func(db *gorm.DB) *gorm.DB {
+			return db.Where("status = ?", true)
+		}).First(&account, accountID).Error; err != nil {
+			return nil, err
+		}
+		seen := make(map[int64]bool)
+		for _, role := range account.Roles {
+			for _, menu := range role.Menus {
+				if !seen[menu.ID] {
+					seen[menu.ID] = true
+					menus = append(menus, menu)
+				}
 			}
 		}
 	}
