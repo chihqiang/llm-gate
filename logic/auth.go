@@ -2,21 +2,30 @@ package logic
 
 import (
 	"errors"
+	"fmt"
+	"time"
 
+	"chihqiang/llm-gate/cache"
 	"chihqiang/llm-gate/model"
 
 	"github.com/chihqiang/infra-go/hash"
 	"github.com/chihqiang/infra-go/jwt"
+	"github.com/chihqiang/infra-go/logger"
 	"gorm.io/gorm"
 )
 
 type AuthLogic struct {
-	db *gorm.DB
-	j  *jwt.JWT
+	db           *gorm.DB
+	j            *jwt.JWT
+	accountCache cache.Cache
 }
 
-func NewAuthLogic(db *gorm.DB, j *jwt.JWT) *AuthLogic {
-	return &AuthLogic{db: db, j: j}
+func NewAuthLogic(db *gorm.DB, j *jwt.JWT, accountCache cache.Cache) *AuthLogic {
+	return &AuthLogic{
+		db:           db,
+		j:            j,
+		accountCache: accountCache,
+	}
 }
 
 type LoginRequest struct {
@@ -36,16 +45,19 @@ func (s *AuthLogic) Login(req *LoginRequest) (*LoginResponse, error) {
 	var account model.Account
 	if err := s.db.Where("email = ?", req.Email).First(&account).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Warn("auth login failed: email not found", logger.String("email", req.Email))
 			return nil, errors.New("邮箱或密码错误")
 		}
 		return nil, err
 	}
 
 	if !account.Status {
+		logger.Warn("auth login failed: account disabled", logger.Int64("account_id", account.ID))
 		return nil, errors.New("账号已被禁用")
 	}
 
 	if err := hash.BcryptCompare(account.Password, req.Password); err != nil {
+		logger.Warn("auth login failed: wrong password", logger.Int64("account_id", account.ID))
 		return nil, errors.New("邮箱或密码错误")
 	}
 
@@ -59,8 +71,39 @@ func (s *AuthLogic) Login(req *LoginRequest) (*LoginResponse, error) {
 		return nil, err
 	}
 
+	logger.Info("auth login ok", logger.Int64("account_id", account.ID), logger.String("email", account.Email))
 	return &LoginResponse{
 		ID:           account.ID,
+		AccessToken:  tokenPair.AccessToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    tokenPair.ExpiresAt,
+		RefreshToken: tokenPair.RefreshToken,
+	}, nil
+}
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+func (s *AuthLogic) Refresh(req *RefreshRequest) (*LoginResponse, error) {
+	tokenPair, err := s.j.RefreshToken(req.RefreshToken)
+	if err != nil {
+		return nil, errors.New("刷新令牌无效或已过期")
+	}
+
+	// 从刷新令牌中提取用户 ID
+	claims, err := s.j.ParseRefreshToken(req.RefreshToken)
+	if err != nil {
+		return nil, errors.New("刷新令牌无效或已过期")
+	}
+
+	userID, ok := claims[jwt.ClaimKeyUserID].(float64)
+	if !ok {
+		return nil, errors.New("刷新令牌无效")
+	}
+
+	return &LoginResponse{
+		ID:           int64(userID),
 		AccessToken:  tokenPair.AccessToken,
 		TokenType:    "Bearer",
 		ExpiresIn:    tokenPair.ExpiresAt,
@@ -107,7 +150,13 @@ func (s *AuthLogic) GetProfile(accountID int64) (*ProfileResponse, error) {
 }
 
 func (s *AuthLogic) GetAccountByID(accountID int64) (*model.Account, error) {
+	cacheKey := fmt.Sprintf("account:%d", accountID)
 	var account model.Account
+	if ok, _ := s.accountCache.GetInto(cacheKey, &account); ok {
+		return &account, nil
+	}
+	logger.Info("auth account cache miss", logger.Int64("account_id", accountID))
+
 	if err := s.db.Preload("Roles", func(db *gorm.DB) *gorm.DB {
 		return db.Where("status = ?", true)
 	}).Preload("Roles.Menus", func(db *gorm.DB) *gorm.DB {
@@ -115,5 +164,7 @@ func (s *AuthLogic) GetAccountByID(accountID int64) (*model.Account, error) {
 	}).First(&account, accountID).Error; err != nil {
 		return nil, err
 	}
+
+	s.accountCache.Set(cacheKey, &account, 10*time.Second)
 	return &account, nil
 }

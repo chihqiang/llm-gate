@@ -1,6 +1,10 @@
 package main
 
 import (
+	"os"
+	"time"
+
+	"chihqiang/llm-gate/cache"
 	"chihqiang/llm-gate/config"
 	"chihqiang/llm-gate/db"
 	"chihqiang/llm-gate/handler"
@@ -13,11 +17,18 @@ import (
 	"github.com/chihqiang/infra-go/jwt"
 	"github.com/chihqiang/infra-go/logger"
 	"github.com/chihqiang/infra-go/orm"
+	"github.com/chihqiang/infra-go/redisx"
+	"gorm.io/gorm"
 )
 
 func main() {
 	var cfg config.Config
 	conf.MustLoad("config.yaml", &cfg)
+
+	// 支持通过环境变量覆盖 JWT Secret
+	if secret := os.Getenv("JWT_SECRET"); secret != "" {
+		cfg.JWT.Secret = secret
+	}
 
 	log := logger.New(cfg.Logger)
 	defer log.Sync()
@@ -26,6 +37,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
+
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		log.Fatalf("获取 sql.DB 失败: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(50)
+	sqlDB.SetMaxIdleConns(20)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+
+	// SQLite：设置 busy_timeout 避免写冲突时立即报错
+	if cfg.DB.Driver == "sqlite" {
+		gormDB.Exec("PRAGMA busy_timeout = 5000")
+	}
+
+	// 配置 GORM 会话：预编译语句 + 默认超时
+	gormDB = gormDB.Session(&gorm.Session{PrepareStmt: true})
 
 	if err := db.Migrate(gormDB); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
@@ -36,15 +63,33 @@ func main() {
 		log.Fatalf("JWT 初始化失败: %v", err)
 	}
 
-	authSvc := logic.NewAuthLogic(gormDB, j)
-	accountSvc := logic.NewAccountLogic(gormDB)
+	// 初始化缓存：Redis 配置不为空时使用 Redis，否则使用内存缓存。
+	var authCache, providerCache, modelListCache, accountCache cache.Cache
+	if cfg.Redis.Addr != "" {
+		redisClient, err := redisx.New(cfg.Redis)
+		if err != nil {
+			log.Fatalf("Redis 连接失败: %v", err)
+		}
+		accountCache = cache.NewRedis(redisClient)
+		authCache = cache.NewRedis(redisClient)
+		providerCache = cache.NewRedis(redisClient)
+		modelListCache = cache.NewRedis(redisClient)
+	} else {
+		accountCache = cache.NewMemory()
+		authCache = cache.NewMemory()
+		providerCache = cache.NewMemory()
+		modelListCache = cache.NewMemory()
+	}
+
+	authSvc := logic.NewAuthLogic(gormDB, j, accountCache)
+	accountSvc := logic.NewAccountLogic(gormDB, accountCache)
 	roleSvc := logic.NewRoleLogic(gormDB)
 	menuSvc := logic.NewMenuLogic(gormDB)
 	logSvc := logic.NewLogLogic(gormDB)
 
-	providerSvc := logic.NewProviderLogic(gormDB)
-	modelSvc := logic.NewModelLogic(gormDB)
-	tokenSvc := logic.NewTokenLogic(gormDB)
+	providerSvc := logic.NewProviderLogic(gormDB, providerCache)
+	modelSvc := logic.NewModelLogic(gormDB, modelListCache)
+	tokenSvc := logic.NewTokenLogic(gormDB, authCache)
 	usageSvc := logic.NewUsageLogic(gormDB)
 	dashboardSvc := logic.NewDashboardLogic(gormDB)
 
@@ -59,11 +104,12 @@ func main() {
 	modelHandler := handler.NewModelHandler(modelSvc)
 	tokenHandler := handler.NewTokenHandler(tokenSvc)
 	usageHandler := handler.NewUsageHandler(usageSvc)
-	relayHandler := relay.NewRelayHandler(gormDB, cfg.Relay)
+	relayHandler := relay.NewRelayHandler(gormDB, cfg.Relay, authCache, providerCache, modelListCache)
+	defer relayHandler.Stop()
 
 	server := httpx.NewServer(cfg.Server)
 
-	route.Register(server, j, authSvc, logSvc,
+	route.Register(server, j, authSvc, logSvc, cfg,
 		authHandler, accountHandler, roleHandler, menuHandler, logHandler, dashboardHandler,
 		providerHandler, modelHandler, tokenHandler, usageHandler, relayHandler)
 

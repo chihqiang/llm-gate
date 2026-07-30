@@ -1,17 +1,21 @@
 package logic
 
 import (
+	"fmt"
+
+	"chihqiang/llm-gate/cache"
 	"chihqiang/llm-gate/model"
 
 	"gorm.io/gorm"
 )
 
 type ModelLogic struct {
-	db *gorm.DB
+	db             *gorm.DB
+	modelListCache cache.Cache
 }
 
-func NewModelLogic(db *gorm.DB) *ModelLogic {
-	return &ModelLogic{db: db}
+func NewModelLogic(db *gorm.DB, modelListCache cache.Cache) *ModelLogic {
+	return &ModelLogic{db: db, modelListCache: modelListCache}
 }
 
 type ModelListRequest struct {
@@ -78,6 +82,7 @@ type ModelCreateRequest struct {
 	UpstreamModelName string  `json:"upstream_model_name" binding:"required"`
 	ModelRatio        float64 `json:"model_ratio"`
 	CompletionRatio   float64 `json:"completion_ratio"`
+	Weight            int     `json:"weight"`
 	Status            bool    `json:"status"`
 	Remark            string  `json:"remark"`
 }
@@ -89,6 +94,7 @@ func (s *ModelLogic) Create(req *ModelCreateRequest) (*model.ModelConfig, error)
 		UpstreamModelName: req.UpstreamModelName,
 		ModelRatio:        req.ModelRatio,
 		CompletionRatio:   req.CompletionRatio,
+		Weight:            req.Weight,
 		Status:            req.Status,
 		Remark:            req.Remark,
 	}
@@ -97,6 +103,9 @@ func (s *ModelLogic) Create(req *ModelCreateRequest) (*model.ModelConfig, error)
 	}
 	if mc.CompletionRatio == 0 {
 		mc.CompletionRatio = 1.0
+	}
+	if mc.Weight == 0 {
+		mc.Weight = 1
 	}
 	if err := s.db.Create(&mc).Error; err != nil {
 		return nil, err
@@ -111,6 +120,7 @@ type ModelUpdateRequest struct {
 	UpstreamModelName string  `json:"upstream_model_name" binding:"required"`
 	ModelRatio        float64 `json:"model_ratio"`
 	CompletionRatio   float64 `json:"completion_ratio"`
+	Weight            int     `json:"weight"`
 	Status            bool    `json:"status"`
 	Remark            string  `json:"remark"`
 }
@@ -122,15 +132,23 @@ func (s *ModelLogic) Update(req *ModelUpdateRequest) (*model.ModelConfig, error)
 		"upstream_model_name": req.UpstreamModelName,
 		"model_ratio":         req.ModelRatio,
 		"completion_ratio":    req.CompletionRatio,
+		"weight":              req.Weight,
 		"status":              req.Status,
 		"remark":              req.Remark,
 	}
 	if err := s.db.Model(&model.ModelConfig{}).Where("id = ?", req.ID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
+	// 失效模型列表缓存，多节点立即感知变更
+	s.modelListCache.Del(fmt.Sprintf("model_list:%s", req.Name))
+	s.modelListCache.Del(fmt.Sprintf("neg:%s", req.Name))
 	return s.GetByID(req.ID)
 }
 
 func (s *ModelLogic) Delete(id int64) error {
-	return s.db.Delete(&model.ModelConfig{}, id).Error
+	if err := s.db.Delete(&model.ModelConfig{}, id).Error; err != nil {
+		return err
+	}
+	// 注意：无法在此获取模型名称，调用方可根据需要额外失效缓存
+	return nil
 }

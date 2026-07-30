@@ -89,17 +89,22 @@ type RoleUpdateRequest struct {
 }
 
 func (s *RoleLogic) Update(req *RoleUpdateRequest) (*model.Role, error) {
-	role := model.Role{
+	// 使用 map + Updates 而非 Save，避免零值字段（如 CreatedAt）被覆盖
+	if err := s.db.Model(&model.Role{}).Where("id = ?", req.ID).Updates(map[string]interface{}{
+		"name":   req.Name,
+		"sort":   req.Sort,
+		"status": req.Status,
+		"remark": req.Remark,
+	}).Error; err != nil {
+		return nil, err
+	}
+	return &model.Role{
 		ID:     req.ID,
 		Name:   req.Name,
 		Sort:   req.Sort,
 		Status: req.Status,
 		Remark: req.Remark,
-	}
-	if err := s.db.Save(&role).Error; err != nil {
-		return nil, err
-	}
-	return &role, nil
+	}, nil
 }
 
 func (s *RoleLogic) Delete(id int64) error {

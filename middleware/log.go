@@ -53,6 +53,32 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return rw.ResponseWriter.Write(b)
 }
 
+var logWorker = newLogWorker()
+
+type logWorkerT struct {
+	jobs chan func()
+}
+
+func newLogWorker() *logWorkerT {
+	w := &logWorkerT{jobs: make(chan func(), 256)}
+	for range 4 {
+		go func() {
+			for job := range w.jobs {
+				job()
+			}
+		}()
+	}
+	return w
+}
+
+func (w *logWorkerT) Submit(job func()) {
+	select {
+	case w.jobs <- job:
+	default:
+		logger.Warn("log worker queue full, dropping log")
+	}
+}
+
 func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) httpx.Middleware {
 	skipMethodSet := make(map[string]bool, len(skipMethods))
 	for _, m := range skipMethods {
@@ -77,7 +103,11 @@ func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) ht
 			var reqBody []byte
 			if r.Body != nil {
 				limitedBody := io.LimitReader(r.Body, maxReqBodySize+1)
-				reqBody, _ = io.ReadAll(limitedBody)
+				var readErr error
+				reqBody, readErr = io.ReadAll(limitedBody)
+				if readErr != nil {
+					logger.Warn("log: read request body failed", logger.Err(readErr))
+				}
 				if len(reqBody) > maxReqBodySize {
 					reqBody = reqBody[:maxReqBodySize]
 				}
@@ -104,23 +134,30 @@ func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) ht
 			ua := r.UserAgent()
 			browser, os := parseUserAgent(ua)
 
-			go func() {
+			reqURI := r.RequestURI
+			reqMethod := r.Method
+			reqIP := getClientIP(r)
+			respStatus := rw.status
+			respBody := rw.body.String()
+			reqPayload := sanitizePayload(string(reqBody))
+
+			logWorker.Submit(func() {
 				if err := logLogic.Create(&model.Log{
-					RequestPath:    r.RequestURI,
-					RequestMethod:  r.Method,
-					ResponseCode:   rw.status,
-					RequestPayload: sanitizePayload(string(reqBody)),
-					RequestIP:      getClientIP(r),
+					RequestPath:    reqURI,
+					RequestMethod:  reqMethod,
+					ResponseCode:   respStatus,
+					RequestPayload: reqPayload,
+					RequestIP:      reqIP,
 					RequestOS:      os,
 					RequestBrowser: browser,
-					ResponseJSON:   truncateString(rw.body.String(), maxRespBodySize),
+					ResponseJSON:   truncateString(respBody, maxRespBodySize),
 					ProcessTime:    duration.Milliseconds(),
 					AccountID:      accountID,
 					AccountName:    accountName,
 				}); err != nil {
 					logger.Error("create log failed", logger.Err(err))
 				}
-			}()
+			})
 		}
 	}
 }
@@ -249,7 +286,10 @@ func sanitizePayload(payload string) string {
 		}
 	}
 
-	b, _ := json.Marshal(raw)
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return truncateString(payload, 4096)
+	}
 	return string(b)
 }
 

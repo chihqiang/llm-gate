@@ -4,7 +4,7 @@ import axios, {
   AxiosResponse,
   InternalAxiosRequestConfig,
 } from "axios"
-import { getAccessToken, removeToken, emitUnauthorized } from "@/lib/token"
+import { getAccessToken, removeToken, emitUnauthorized, getToken, setToken } from "@/lib/token"
 
 /**
  * 创建 Axios 实例
@@ -13,8 +13,8 @@ import { getAccessToken, removeToken, emitUnauthorized } from "@/lib/token"
 const service = axios.create({
   // API 基础地址（从环境变量读取）
   baseURL: process.env.NEXT_PUBLIC_API_URL,
-  // 请求超时时间：15秒
-  timeout: 15000,
+  // 请求超时时间：30秒
+  timeout: 30000,
   // 默认请求头：提交数据为 JSON 格式
   headers: {
     "Content-Type": "application/json",
@@ -78,10 +78,46 @@ service.interceptors.request.use(
   }
 )
 
+// ==================== Token 自动刷新 ====================
+/**
+ * 是否正在刷新 Token
+ */
+let isRefreshing = false
+
+/**
+ * 等待 Token 刷新的请求队列
+ */
+let pendingQueue: Array<() => void> = []
+
+/**
+ * 尝试使用 refresh_token 刷新 access_token
+ * 成功返回新的 token，失败返回 null
+ */
+async function tryRefreshToken(): Promise<boolean> {
+  const token = getToken()
+  if (!token?.refresh_token) return false
+
+  try {
+    // 直接用 axios 实例请求，跳过拦截器
+    const resp = await service.post("/api/v1/auth/refresh", {
+      refresh_token: token.refresh_token,
+    })
+    const data = resp.data?.data
+    if (data?.access_token) {
+      setToken(data)
+      return true
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
 // ==================== 响应拦截器 ====================
 /**
  * 响应成功后统一处理
  * 1. 处理业务错误（code !== 0）
+ * 2. 401 自动刷新 Token 并重试
  */
 service.interceptors.response.use(
   (response: AxiosResponse<ApiResponse>) => {
@@ -99,17 +135,64 @@ service.interceptors.response.use(
   /**
    * 响应失败处理（HTTP 状态码错误：400/401/500 等）
    */
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
     const status = error.response?.status
     const responseData = error.response?.data as ApiResponse | undefined
-
-    // 统一错误信息：优先使用后端返回的 msg，其次使用 axios 错误信息
     const errMsg = responseData?.msg || error.message || "网络异常，请稍后重试"
 
-    // 401 未授权 → 发出事件，由全局监听器处理
+    // 401 未授权 → 尝试刷新 Token 后重试
     if (status === 401) {
+      const originalConfig = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
+
+      // 登录/刷新接口 401 不重试
+      const isAuthEndpoint = originalConfig.url?.includes("/auth/login") ||
+        originalConfig.url?.includes("/auth/refresh")
+
+      if (originalConfig._retry || isAuthEndpoint) {
+        removeToken()
+        emitUnauthorized(errMsg)
+        return Promise.reject(new Error(errMsg))
+      }
+
+      // 已在刷新中，加入等待队列
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          pendingQueue.push(() => {
+            const token = getAccessToken()
+            if (token && originalConfig.headers) {
+              originalConfig.headers.Authorization = `Bearer ${token}`
+            }
+            service(originalConfig).then(resolve).catch(reject)
+          })
+        })
+      }
+
+      // 开始刷新
+      originalConfig._retry = true
+      isRefreshing = true
+
+      const refreshed = await tryRefreshToken()
+
+      isRefreshing = false
+
+      if (refreshed) {
+        // 刷新成功：重试队列中的请求
+        pendingQueue.forEach((cb) => cb())
+        pendingQueue = []
+
+        // 重试当前请求
+        const token = getAccessToken()
+        if (token && originalConfig.headers) {
+          originalConfig.headers.Authorization = `Bearer ${token}`
+        }
+        return service(originalConfig)
+      }
+
+      // 刷新失败：清空队列，跳转登录
+      pendingQueue = []
       removeToken()
       emitUnauthorized(errMsg)
+      return Promise.reject(new Error(errMsg))
     }
 
     // 控制台输出错误日志

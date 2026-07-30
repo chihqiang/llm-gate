@@ -1,6 +1,7 @@
 app:
   name: llm-gate
   version: 0.0.1
+  admin_role_id: 1
 
 server:
   host: 0.0.0.0
@@ -20,6 +21,31 @@ jwt:
 relay:
   timeout: 120
   max_body_mb: 32
+  pre_consume_quota: 1000
+  rate_limit:
+    enabled: true
+    rate: 10
+    burst: 20
+  upstream:
+    retry_enabled: true
+    max_retries: 2
+    retry_delay_ms: 200
+
+cors:
+  allow_origins:
+    - "*"
+
+pprof:
+  enabled: true
+
+# Redis 缓存（可选，多节点部署时配置）
+# redis:
+#   addr: "127.0.0.1:6379"
+#   password: ""
+#   db: 0
+#   pool_size: 10
+#   min_idle_conns: 2
+#   key_prefix: "llm-gate"
 
 logger:
   level: 0

@@ -10,7 +10,7 @@ import (
 	"github.com/chihqiang/infra-go/logger"
 )
 
-func LoadAccount(authSvc *logic.AuthLogic) httpx.Middleware {
+func LoadAccount(authSvc *logic.AuthLogic, adminRoleID int64) httpx.Middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			claims := jwt.ClaimsFromContext(r.Context())
@@ -32,7 +32,9 @@ func LoadAccount(authSvc *logic.AuthLogic) httpx.Middleware {
 				return
 			}
 
-			ctx := ContextWithAccount(r.Context(), account)
+			ctx := ContextWithAccount(r.Context(), account, adminRoleID)
+			// 预构建权限集合，避免在 Permission 中间件中每次重新遍历和去重
+			ctx = ContextWithPermissionSet(ctx, NewPermissionSet(account))
 			next(w, r.WithContext(ctx))
 		}
 	}

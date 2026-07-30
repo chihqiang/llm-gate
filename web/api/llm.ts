@@ -97,6 +97,7 @@ export interface ModelConfig {
   upstream_model_name: string
   model_ratio: number
   completion_ratio: number
+  weight: number
   status: boolean
   remark: string
   created_at: string

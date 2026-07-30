@@ -39,6 +39,14 @@ export async function loginApi(data: LoginRequest): Promise<AuthToken> {
   return await request.post<AuthToken>("/api/v1/auth/login", data)
 }
 
+export async function refreshTokenApi(
+  refreshToken: string
+): Promise<AuthToken> {
+  return await request.post<AuthToken>("/api/v1/auth/refresh", {
+    refresh_token: refreshToken,
+  })
+}
+
 export async function userProfileApi(): Promise<AuthAccount> {
   return await request.get<AuthAccount>("/api/v1/auth/me")
 }

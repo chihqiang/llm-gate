@@ -1,147 +1,254 @@
 # llm-gate
 
-聚合多 LLM 服务商，提供统一 OpenAI 兼容接口的 API 网关。内置管理后台，支持服务商管理、模型管理、API Key 管理、用量统计。
+API 网关，聚合多个 LLM 服务商，对外提供统一 OpenAI 兼容接口。
 
-## 功能
+## 架构
 
-- **统一接口**：对外提供 OpenAI 兼容的 `/v1/chat/completions` 和 `/v1/models` 接口
-- **多服务商聚合**：可配置多个上游服务商（如 DeepSeek、阿里云等），同一模型可跨服务商部署
-- **API Key 管理**：支持多用户、多 Key，配额控制，过期时间
-- **用量统计**：记录每次请求的 Token 消耗和配额扣减，提供按模型的聚合统计
-- **自动同步模型**：从上游服务商拉取模型列表，选择后一键导入
-- **管理后台**：Next.js 构建的现代化管理界面，RBAC 权限控制
+```bash
+客户端 (OpenAI SDK) → Nginx (80) → /api/* → Go :8080 (管理端)
+                                  → /*    → Next.js :3000 (前端)
+```
+
+- **Go 后端**: HTTP 服务 (:8080)，JWT 管理 API + Bearer Token 转发 API
+- **Next.js 前端**: 管理面板，React 19 + shadcn/ui，部署为 standalone server
+- **Nginx**: 反向代理，统一入口 80 端口
+- **Supervisord**: 容器内管理三个进程（gate / nextjs / nginx）
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
-| 后端 | Go, [infra-go](https://github.com/chihqiang/infra-go)（HTTP 框架）, GORM, SQLite/MySQL/PostgreSQL |
-| 前端 | Next.js 16, React 19, shadcn/ui, Tailwind CSS v4, Recharts |
-| 认证 | JWT（管理端）, Bearer Token / sk-xxx（API 端） |
+| 后端语言 | Go 1.25 |
+| HTTP 框架 | `github.com/chihqiang/infra-go/httpx` |
+| ORM | GORM v1.31，支持 SQLite / MySQL / PostgreSQL |
+| 认证 | JWT (管理端) / Bearer Token `sk-*` (转发端) |
+| 缓存 | `github.com/patrickmn/go-cache`（三级缓存） |
+| 日志 | zap 结构化日志 |
+| 前端框架 | Next.js 16 + React 19 + TypeScript |
+| UI 组件 | shadcn/ui + Tailwind CSS v4 |
+| 图表 | Recharts |
+| HTTP 客户端 | Axios |
 
 ## 快速开始
 
-### 1. 启动后端
+### 本地开发
+
+**后端**:
 
 ```bash
 go run main.go
 ```
 
-后端默认监听 `:8080`，使用 SQLite 存储，首次启动自动建表和填充种子数据。
+后端监听 `:8080`，使用 SQLite 数据库。
 
-### 2. 启动前端
+**前端**:
 
 ```bash
 cd web
-pnpm install
 pnpm dev
 ```
 
-前端默认监听 `:3000`，访问 `http://localhost:3000` 进入管理后台。
+前端监听 `:3000`，自动代理 `/api/*` 到后端。
 
-默认管理员账号：`admin@example.com` / `123456`
-
-### 3. 配置上游服务商
-
-进入管理后台 → **LLM 网关** → **服务商管理**，添加服务商（如 DeepSeek、阿里云等），然后点击「同步模型」拉取上游模型列表，选择需要的模型导入。
-
-### 4. 创建 API Key
-
-进入 **LLM 网关** → **API Key** 创建密钥，调用 API 时使用 `Authorization: Bearer sk-xxx`。
-
-### 5. 调用 API
+### Docker 部署
 
 ```bash
-curl http://localhost:8080/v1/chat/completions \
-  -H "Authorization: Bearer sk-xxxxx" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "deepseek-v4-flash",
-    "messages": [{"role": "user", "content": "hello"}],
-    "stream": false
-  }'
+docker build -t llm-gate .
+docker run --rm -p 8080:80 llm-gate
 ```
+
+### 默认账号
+
+- 邮箱: `admin@example.com`
+- 密码: `123456`
 
 ## 配置
 
-编辑 `config.yaml`：
+| 字段 | 说明 | 默认值 |
+|---|---|---|
+| `server.host` | 监听地址 | `0.0.0.0` |
+| `server.port` | 监听端口 | `8080` |
+| `db.driver` | 数据库驱动 | `sqlite` |
+| `db.database` | 数据库文件/名称 | `./data.db` |
+| `jwt.secret` | JWT 密钥 | `llm-gate-secret-key` |
+| `jwt.access_token_expire` | 访问令牌过期 | `2h` |
+| `jwt.refresh_token_expire` | 刷新令牌过期 | `168h` |
+| `relay.timeout` | 转发请求超时 | `120` |
+| `relay.max_body_mb` | 最大请求体 | `32` |
 
-```yaml
-server:
-  host: 0.0.0.0
-  port: 8080
+## API
 
-db:
-  driver: sqlite        # sqlite | mysql | postgres
-  database: ./data.db
+### 管理 API（JWT 认证）
 
-relay:
-  timeout: 120          # 上游请求超时（秒）
-  max_body_mb: 32       # 最大请求体（MB）
+所有管理接口前缀 `/api/v1`，需在 Header 中携带 `Authorization: Bearer <jwt_token>`。
 
-jwt:
-  secret: llm-gate-secret-key
-  access_token_expire: 2h
-  refresh_token_expire: 168h
-```
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/auth/login` | 登录 |
+| GET | `/auth/me` | 当前用户信息 |
+| GET/POST/PUT/DELETE | `/sys/accounts[/:id]` | 账号 CRUD |
+| GET/POST/PUT/DELETE | `/sys/roles[/:id]` | 角色 CRUD |
+| POST | `/sys/roles/:id/menus` | 角色关联菜单 |
+| GET/POST/PUT/DELETE | `/sys/menus[/:id]` | 菜单 CRUD |
+| GET | `/sys/logs` | 操作日志 |
+| GET | `/dashboard/stats` | 仪表盘统计 |
+| GET/POST/PUT/DELETE | `/llm/providers[/:id]` | 服务商 CRUD |
+| GET | `/llm/providers/all` | 所有服务商 |
+| GET | `/llm/providers/:id/sync-models/preview` | 预览上游模型 |
+| POST | `/llm/providers/:id/sync-models` | 同步上游模型 |
+| GET/POST/PUT/DELETE | `/llm/models[/:id]` | 模型 CRUD |
+| GET | `/llm/models/all` | 所有模型 |
+| GET/POST/PUT/DELETE | `/llm/tokens[/:id]` | API Key CRUD |
+| GET | `/llm/tokens/:id/reveal` | 查看完整密钥（需所有权） |
+| GET | `/llm/usage` | 用量日志 |
+| GET | `/llm/usage/stats` | 用量统计 |
+
+### 转发 API（Bearer Token 认证）
+
+前缀 `/v1`，需在 Header 中携带 `Authorization: Bearer sk-<hex>`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/v1/chat/completions` | 对话补全（流式/非流式） |
+| GET | `/v1/models` | 可用模型列表 |
+
+## 数据模型
+
+### 服务商 (llm_providers)
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| name | string | 名称，如 DeepSeek |
+| base_url | string | API 地址 |
+| api_key | string | API 密钥 |
+| status | bool | 启用/禁用 |
+| priority | int | 优先级 |
+| weight | int | 权重 |
+
+### 模型 (llm_models)
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| name | string | 对外模型名，如 deepseek-chat |
+| provider_id | int64 | 关联服务商 |
+| upstream_model_name | string | 上游实际模型名 |
+| model_ratio | float64 | 模型倍率 |
+| completion_ratio | float64 | 补全倍率 |
+| weight | int | 权重（同模型多服务商时按权重分发） |
+| status | bool | 启用/禁用 |
+
+`(provider_id, upstream_model_name)` 联合唯一索引。
+
+### API Key (llm_user_tokens)
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| account_id | int64 | 所属账户 |
+| name | string | 令牌名称 |
+| key | string | 密钥，`sk-` + 32 位 hex |
+| quota | int64 | 额度 |
+| expired_at | *time.Time | 过期时间 |
+| status | bool | 启用/禁用 |
+
+密钥生成: 16 随机字节 → `sk-` + hex 编码（35 字符）。
+
+### 用量日志 (llm_usage_logs)
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| account_id | int64 | 账户 ID |
+| token_id | int64 | 令牌 ID |
+| model_name | string | 模型名称 |
+| provider_id | int64 | 服务商 ID |
+| prompt_tokens | int | 提示令牌 |
+| completion_tokens | int | 补全令牌 |
+| total_tokens | int | 总令牌 |
+| quota_cost | int64 | 额度消耗 |
+| request_id | string | 请求 ID |
+
+## 模型分发
+
+同名模型配置多个服务商时，使用**加权随机**策略分发：
+
+1. 从缓存（30s）或 DB 查询所有同名的启用模型
+2. 计算总权重
+3. 按 `time.Now().UnixNano() % totalWeight` 选取
+4. 将请求中 `model` 字段替换为 `upstream_model_name`
+
+示例：`deepseek-chat` 配了 DeepSeek (weight=2) 和 阿里云 (weight=1)，约 2/3 请求走 DeepSeek，1/3 走阿里云。
+
+## 缓存策略
+
+| 缓存 | 过期 | 内容 |
+|---|---|---|
+| authCache | 10s | Token 认证结果 |
+| modelListCache | 30s | 模型配置列表 `[]ModelConfig` |
+| providerCache | 60s | 服务商配置 |
+
+## 配额
+
+预扣 + 结算模式：
+
+1. 请求开始时预扣 1000 额度
+2. 非流式响应结束后读取 `usage` 字段计算实际消耗
+3. 多退少补（`delta = actual - preConsume`）
+4. 流式请求未计入用量（配额退还）
+5. 用量日志通过批量写入（最大 32 条 / 3s 间隔）
 
 ## 项目结构
 
 ```
-├── main.go                 # 入口
-├── config.yaml             # 配置
-├── config/config.go        # 配置结构体
-├── db/migrate.go           # 数据库迁移 + 种子数据
-├── model/                  # GORM 模型
-│   ├── provider.go         # 服务商
-│   ├── model_config.go     # 模型配置
-│   ├── user_token.go       # API Key
-│   └── usage_log.go        # 用量日志
-├── logic/                  # 业务逻辑
-│   ├── provider.go         # 服务商管理、同步模型
-│   ├── model_config.go     # 模型管理
-│   ├── user_token.go       # Key 管理、配额扣减
-│   ├── usage.go            # 用量记录与统计
-│   └── dashboard.go        # 仪表盘统计
-├── handler/                # HTTP Handler
-├── middleware/             # 认证、权限中间件
-├── relay/                  # 转发引擎
-│   ├── auth.go             # API Key 认证
-│   ├── resolver.go         # 模型→服务商解析
-│   ├── forward.go          # 上游请求转发
-│   └── relay.go            # Chat/Models Handler
-├── route/route.go          # 路由注册
-└── web/                    # Next.js 前端
-    ├── api/                # API 调用层
-    ├── components/         # UI 组件
-    └── app/admin/          # 管理后台页面
-        ├── dashboard/      # 数据概览
-        └── sys/llm/        # LLM 网关管理
-            ├── providers/  # 服务商管理
-            ├── models/     # 模型管理
-            └── tokens/     # API Key
+├── main.go                   # 入口
+├── config.yaml               # 配置文件
+├── Dockerfile                # 多阶段构建
+├── nginx.conf                # Nginx 配置
+├── supervisord.conf          # Supervisor 配置
+├── config/
+│   └── config.go             # 配置结构体
+├── db/
+│   └── migrate.go            # 数据库迁移 + 种子数据
+├── model/                    # 数据模型
+├── logic/                    # 业务逻辑层
+├── handler/                  # HTTP 处理器
+├── middleware/                # 中间件（认证/日志/权限）
+├── route/
+│   └── route.go              # 路由注册
+└── relay/                    # LLM 转发核心
+    ├── relay.go              # 入口：认证、模型解析、转发、配额
+    ├── forward.go            # HTTP 转发 + 流式代理
+    ├── auth.go               # Token 认证
+    ├── resolver.go           # 模型解析
+    ├── batch.go              # 用量批量写入
+    └── usage.go              # 配额扣减
+├── web/                      # Next.js 前端
+    ├── api/                  # API 请求封装
+    ├── app/                  # 页面路由
+    ├── components/           # UI 组件
+    ├── hooks/                # React Hooks
+    └── lib/                  # 工具函数
 ```
 
-## API 概览
+## 种子数据
 
-### 管理端 API（需 JWT 认证）
+首次启动自动创建：
 
-| 方法 | 路径 | 说明 |
+- **超级管理员** 角色，关联所有菜单权限
+- **管理员账号** admin@example.com / 123456
+- **完整菜单树**: 仪表盘、系统管理（账号/角色/菜单/日志）、LLM 网关（服务商/模型/API Key）
+
+## Docker 构建
+
+多阶段构建：
+
+| 阶段 | 基础镜像 | 产物 |
 |---|---|---|
-| POST | `/api/v1/auth/login` | 登录 |
-| GET | `/api/v1/dashboard/stats` | 仪表盘统计 |
-| CRUD | `/api/v1/llm/providers` | 服务商管理 |
-| CRUD | `/api/v1/llm/models` | 模型管理 |
-| CRUD | `/api/v1/llm/tokens` | API Key 管理 |
-| GET | `/api/v1/llm/tokens/{id}/reveal` | 获取完整 Key（仅本人） |
-| POST | `/api/v1/llm/providers/{id}/sync-models` | 同步上游模型 |
-| GET | `/api/v1/llm/providers/{id}/sync-models/preview` | 预览上游模型 |
-| GET | `/api/v1/llm/usage` | 用量明细 |
-| GET | `/api/v1/llm/usage/stats` | 用量聚合统计 |
+| go-builder | golang:1.25-alpine | Go 二进制（CGO 启用） |
+| node-builder | node:22-alpine | Next.js standalone 构建产物 |
+| runtime | node:22-alpine | 聚合所有产物 + nginx + supervisord |
 
-### 转发 API（需 Bearer Token / sk-xxx）
+镜像包含 3 个进程（supervisord 管理）：
+- `gate` — Go 后端
+- `nextjs` — Next.js 服务（Node）
+- `nginx` — 反向代理
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| POST | `/v1/chat/completions` | Chat Completion（支持 streaming） |
-| GET | `/v1/models` | 可用模型列表 |
+所有进程日志输出到 stdout/stderr。

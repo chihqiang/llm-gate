@@ -1,6 +1,9 @@
 package logic
 
 import (
+	"fmt"
+
+	"chihqiang/llm-gate/cache"
 	"chihqiang/llm-gate/model"
 
 	"github.com/chihqiang/infra-go/hash"
@@ -8,17 +11,19 @@ import (
 )
 
 type AccountLogic struct {
-	db *gorm.DB
+	db           *gorm.DB
+	accountCache cache.Cache
 }
 
-func NewAccountLogic(db *gorm.DB) *AccountLogic {
-	return &AccountLogic{db: db}
+func NewAccountLogic(db *gorm.DB, accountCache cache.Cache) *AccountLogic {
+	return &AccountLogic{db: db, accountCache: accountCache}
 }
 
 type AccountListRequest struct {
-	Page int `form:"page" binding:"required,min=1"`
-	Size int `form:"size" binding:"required,min=1,max=1000"`
-	ID   int `form:"id"`
+	Page             int   `form:"page" binding:"required,min=1"`
+	Size             int   `form:"size" binding:"required,min=1,max=1000"`
+	ID               int   `form:"id"`
+	CurrentAccountID int64 `form:"-"`
 }
 
 type AccountListResponse struct {
@@ -31,7 +36,9 @@ func (s *AccountLogic) List(req *AccountListRequest) (*AccountListResponse, erro
 	var total int64
 
 	query := s.db.Model(&model.Account{})
-	if req.ID > 0 {
+	if req.CurrentAccountID > 0 {
+		query = query.Where("id = ?", req.CurrentAccountID)
+	} else if req.ID > 0 {
 		query = query.Where("id = ?", req.ID)
 	}
 
@@ -134,6 +141,7 @@ func (s *AccountLogic) Update(req *AccountUpdateRequest) (*model.Account, error)
 		updates["password"] = hashed
 	}
 
+	s.accountCache.Del(fmt.Sprintf("account:%d", req.ID))
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&account).Updates(updates).Error; err != nil {
 			return err

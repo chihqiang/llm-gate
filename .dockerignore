@@ -1,0 +1,12 @@
+.git
+.gitignore
+data.db
+data/
+*.log
+node_modules
+web/node_modules
+web/.next
+web/out
+.env
+.env.local
+.turbo

@@ -49,6 +49,11 @@ const columns: DataListColumn<ModelConfig>[] = [
     cell: (row) => row.model_ratio,
   },
   {
+    key: "weight",
+    header: "权重",
+    cell: (row) => row.weight,
+  },
+  {
     key: "status",
     header: "状态",
     cell: (row) => (row.status ? "启用" : "禁用"),
@@ -62,6 +67,7 @@ const defaultFormData: ModelConfig = {
   upstream_model_name: "",
   model_ratio: 1,
   completion_ratio: 1,
+  weight: 1,
   status: true,
   remark: "",
   created_at: "",

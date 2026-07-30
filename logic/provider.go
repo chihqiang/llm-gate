@@ -5,18 +5,28 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"time"
 
+	"chihqiang/llm-gate/cache"
 	"chihqiang/llm-gate/model"
 
+	"github.com/chihqiang/infra-go/logger"
 	"gorm.io/gorm"
 )
 
-type ProviderLogic struct {
-	db *gorm.DB
+// upstreamClient 用于请求上游服务商 API，设置超时防止挂起
+var upstreamClient = &http.Client{
+	Timeout: 30 * time.Second,
 }
 
-func NewProviderLogic(db *gorm.DB) *ProviderLogic {
-	return &ProviderLogic{db: db}
+type ProviderLogic struct {
+	db            *gorm.DB
+	providerCache cache.Cache
+}
+
+func NewProviderLogic(db *gorm.DB, providerCache cache.Cache) *ProviderLogic {
+	return &ProviderLogic{db: db, providerCache: providerCache}
 }
 
 type ProviderListRequest struct {
@@ -118,11 +128,16 @@ func (s *ProviderLogic) Update(req *ProviderUpdateRequest) (*model.Provider, err
 	if err := s.db.Model(&model.Provider{}).Where("id = ?", req.ID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
+	s.providerCache.Del(fmt.Sprintf("provider:%d", req.ID))
 	return s.GetByID(req.ID)
 }
 
 func (s *ProviderLogic) Delete(id int64) error {
-	return s.db.Delete(&model.Provider{}, id).Error
+	if err := s.db.Delete(&model.Provider{}, id).Error; err != nil {
+		return err
+	}
+	s.providerCache.Del(fmt.Sprintf("provider:%d", id))
+	return nil
 }
 
 type UpstreamModel struct {
@@ -152,14 +167,14 @@ func (s *ProviderLogic) fetchUpstreamModels(providerID int64) ([]upstreamModelDT
 		return nil, fmt.Errorf("provider not found: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", provider.BaseURL+"/v1/models", nil)
+	req, err := http.NewRequest("GET", strings.TrimRight(provider.BaseURL, "/")+"/v1/models", nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+provider.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := upstreamClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request upstream: %w", err)
 	}
@@ -180,22 +195,46 @@ func (s *ProviderLogic) fetchUpstreamModels(providerID int64) ([]upstreamModelDT
 	return upstream.Data, nil
 }
 
+// getExistingModelMap 批量查询已存在的模型，返回 upstream_model_name -> bool 的映射
+func (s *ProviderLogic) getExistingModelMap(providerID int64, upstreamNames []string) (map[string]bool, error) {
+	if len(upstreamNames) == 0 {
+		return make(map[string]bool), nil
+	}
+
+	var existing []model.ModelConfig
+	if err := s.db.Where("provider_id = ? AND upstream_model_name IN ?", providerID, upstreamNames).
+		Select("upstream_model_name").Find(&existing).Error; err != nil {
+		return nil, err
+	}
+
+	existingMap := make(map[string]bool, len(existing))
+	for _, m := range existing {
+		existingMap[m.UpstreamModelName] = true
+	}
+	return existingMap, nil
+}
+
 func (s *ProviderLogic) PreviewModels(providerID int64) (*SyncModelsPreview, error) {
 	data, err := s.fetchUpstreamModels(providerID)
 	if err != nil {
 		return nil, err
 	}
 
+	// 批量查询已存在的模型，避免 N+1
+	upstreamNames := make([]string, len(data))
+	for i, m := range data {
+		upstreamNames[i] = m.ID
+	}
+	existingMap, err := s.getExistingModelMap(providerID, upstreamNames)
+	if err != nil {
+		return nil, err
+	}
+
 	result := &SyncModelsPreview{Models: make([]UpstreamModel, 0, len(data))}
 	for _, m := range data {
-		var count int64
-		s.db.Model(&model.ModelConfig{}).
-			Where("provider_id = ? AND upstream_model_name = ?", providerID, m.ID).
-			Count(&count)
-
 		result.Models = append(result.Models, UpstreamModel{
 			ID:     m.ID,
-			Exists: count > 0,
+			Exists: existingMap[m.ID],
 		})
 		result.Total++
 	}
@@ -218,41 +257,55 @@ func (s *ProviderLogic) SyncModels(providerID int64, models []string) (*SyncMode
 		return nil, err
 	}
 
+	// 批量查询已存在的模型，避免 N+1
+	upstreamNames := make([]string, len(data))
+	for i, m := range data {
+		upstreamNames[i] = m.ID
+	}
+	existingMap, err := s.getExistingModelMap(providerID, upstreamNames)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Info("provider sync start", logger.Int64("provider_id", providerID), logger.Int("candidates", len(data)))
 	selected := make(map[string]bool, len(models))
 	for _, m := range models {
 		selected[m] = true
 	}
 
 	result := &SyncModelsResult{Models: make([]string, 0, len(data))}
-	for _, m := range data {
-		if !selected[m.ID] {
-			continue
-		}
-		result.Total++
 
-		var count int64
-		s.db.Model(&model.ModelConfig{}).
-			Where("provider_id = ? AND upstream_model_name = ?", providerID, m.ID).
-			Count(&count)
-		if count > 0 {
-			result.Skipped++
-			continue
-		}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		for _, m := range data {
+			if !selected[m.ID] {
+				continue
+			}
+			result.Total++
 
-		remark := fmt.Sprintf("自动同步自 %s", provider.Name)
-		mc := model.ModelConfig{
-			Name:              m.ID,
-			ProviderID:        providerID,
-			UpstreamModelName: m.ID,
-			ModelRatio:        1.0,
-			CompletionRatio:   1.0,
-			Status:            true,
-			Remark:            remark,
+			if existingMap[m.ID] {
+				result.Skipped++
+				continue
+			}
+
+			remark := fmt.Sprintf("自动同步自 %s", provider.Name)
+			mc := model.ModelConfig{
+				Name:              m.ID,
+				ProviderID:        providerID,
+				UpstreamModelName: m.ID,
+				ModelRatio:        1.0,
+				CompletionRatio:   1.0,
+				Status:            true,
+				Remark:            remark,
+			}
+			if err := tx.Create(&mc).Error; err != nil {
+				return fmt.Errorf("create model %s: %w", m.ID, err)
+			}
+			result.Created++
 		}
-		if err := s.db.Create(&mc).Error; err != nil {
-			return nil, fmt.Errorf("create model %s: %w", m.ID, err)
-		}
-		result.Created++
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return result, nil

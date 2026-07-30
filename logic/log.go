@@ -15,11 +15,12 @@ func NewLogLogic(db *gorm.DB) *LogLogic {
 }
 
 type LogListRequest struct {
-	Page          int    `form:"page" binding:"required,min=1"`
-	Size          int    `form:"size" binding:"required,min=1,max=1000"`
-	RequestPath   string `form:"request_path"`
-	RequestIP     string `form:"request_ip"`
-	RequestMethod string `form:"request_method"`
+	Page             int    `form:"page" binding:"required,min=1"`
+	Size             int    `form:"size" binding:"required,min=1,max=1000"`
+	RequestPath      string `form:"request_path"`
+	RequestIP        string `form:"request_ip"`
+	RequestMethod    string `form:"request_method"`
+	CurrentAccountID int64  `form:"-"`
 }
 
 type LogListResponse struct {
@@ -32,6 +33,9 @@ func (s *LogLogic) List(req *LogListRequest) (*LogListResponse, error) {
 	var total int64
 
 	query := s.db.Model(&model.Log{})
+	if req.CurrentAccountID > 0 {
+		query = query.Where("account_id = ?", req.CurrentAccountID)
+	}
 	if req.RequestPath != "" {
 		query = query.Where("request_path LIKE ?", "%"+req.RequestPath+"%")
 	}

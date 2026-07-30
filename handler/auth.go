@@ -32,6 +32,21 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	httpx.OkJSON(w, resp)
 }
 
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	var req logic.RefreshRequest
+	if err := httpx.MustBindJSON(w, r, &req); err != nil {
+		return
+	}
+
+	resp, err := h.svc.Refresh(&req)
+	if err != nil {
+		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		return
+	}
+
+	httpx.OkJSON(w, resp)
+}
+
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	account := middleware.AccountFromContext(r.Context())
 	if account == nil {

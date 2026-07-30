@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"chihqiang/llm-gate/logic"
+	"chihqiang/llm-gate/middleware"
 
 	"github.com/chihqiang/infra-go/httpx"
 )
@@ -23,6 +24,11 @@ func (h *UsageHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	account := middleware.AccountFromContext(r.Context())
+	if account != nil && !middleware.IsAdmin(r.Context()) {
+		req.CurrentAccountID = account.ID
+	}
+
 	resp, err := h.svc.List(&req)
 	if err != nil {
 		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
@@ -38,6 +44,12 @@ func (h *UsageHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	if accountIDStr != "" {
 		accountID, _ = strconv.ParseInt(accountIDStr, 10, 64)
 	}
+
+	account := middleware.AccountFromContext(r.Context())
+	if account != nil && !middleware.IsAdmin(r.Context()) {
+		accountID = account.ID
+	}
+
 	startDate := r.URL.Query().Get("start_date")
 	endDate := r.URL.Query().Get("end_date")
 

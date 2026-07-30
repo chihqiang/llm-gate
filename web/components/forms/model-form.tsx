@@ -69,7 +69,7 @@ export function ModelForm({ formData, onChange }: ModelFormProps) {
           placeholder="例如: gpt-4o-2024-08-06"
         />
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="model_ratio">模型倍率</Label>
           <Input
@@ -96,6 +96,21 @@ export function ModelForm({ formData, onChange }: ModelFormProps) {
               onChange({
                 ...formData,
                 completion_ratio: parseFloat(e.target.value) || 0,
+              })
+            }
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="weight">权重</Label>
+          <Input
+            id="weight"
+            type="number"
+            min="1"
+            value={formData.weight}
+            onChange={(e) =>
+              onChange({
+                ...formData,
+                weight: parseInt(e.target.value) || 1,
               })
             }
           />

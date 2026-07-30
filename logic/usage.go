@@ -17,12 +17,13 @@ func NewUsageLogic(db *gorm.DB) *UsageLogic {
 }
 
 type UsageListRequest struct {
-	Page      int    `form:"page" binding:"required,min=1"`
-	Size      int    `form:"size" binding:"required,min=1,max=1000"`
-	AccountID int64  `form:"account_id"`
-	ModelName string `form:"model_name"`
-	StartDate string `form:"start_date"`
-	EndDate   string `form:"end_date"`
+	Page             int    `form:"page" binding:"required,min=1"`
+	Size             int    `form:"size" binding:"required,min=1,max=1000"`
+	AccountID        int64  `form:"account_id"`
+	ModelName        string `form:"model_name"`
+	StartDate        string `form:"start_date"`
+	EndDate          string `form:"end_date"`
+	CurrentAccountID int64  `form:"-"`
 }
 
 type UsageLogVO struct {
@@ -44,17 +45,23 @@ func (s *UsageLogic) List(req *UsageListRequest) (*UsageListResponse, error) {
 		Select("llm_usage_logs.*, COALESCE(sa.name, '') as account_name, COALESCE(lt.name, '') as token_name").
 		Joins("LEFT JOIN sys_accounts sa ON sa.id = llm_usage_logs.account_id").
 		Joins("LEFT JOIN llm_user_tokens lt ON lt.id = llm_usage_logs.token_id")
-	if req.AccountID > 0 {
+	if req.CurrentAccountID > 0 {
+		query = query.Where("llm_usage_logs.account_id = ?", req.CurrentAccountID)
+	} else if req.AccountID > 0 {
 		query = query.Where("llm_usage_logs.account_id = ?", req.AccountID)
 	}
 	if req.ModelName != "" {
 		query = query.Where("llm_usage_logs.model_name = ?", req.ModelName)
 	}
 	if req.StartDate != "" {
-		query = query.Where("llm_usage_logs.created_at >= ?", req.StartDate)
+		if t, err := time.Parse("2006-01-02", req.StartDate); err == nil {
+			query = query.Where("llm_usage_logs.created_at >= ?", t)
+		}
 	}
 	if req.EndDate != "" {
-		query = query.Where("llm_usage_logs.created_at <= ?", req.EndDate+" 23:59:59")
+		if t, err := time.Parse("2006-01-02", req.EndDate); err == nil {
+			query = query.Where("llm_usage_logs.created_at < ?", t.Add(24*time.Hour))
+		}
 	}
 	if err := query.Count(&total).Error; err != nil {
 		return nil, err
@@ -84,10 +91,14 @@ func (s *UsageLogic) GetStats(accountID int64, startDate, endDate string) ([]Usa
 		query = query.Where("account_id = ?", accountID)
 	}
 	if startDate != "" {
-		query = query.Where("created_at >= ?", startDate)
+		if t, err := time.Parse("2006-01-02", startDate); err == nil {
+			query = query.Where("created_at >= ?", t)
+		}
 	}
 	if endDate != "" {
-		query = query.Where("created_at <= ?", endDate+" 23:59:59")
+		if t, err := time.Parse("2006-01-02", endDate); err == nil {
+			query = query.Where("created_at < ?", t.Add(24*time.Hour))
+		}
 	}
 
 	stats := make([]UsageStat, 0)
@@ -95,24 +106,4 @@ func (s *UsageLogic) GetStats(accountID int64, startDate, endDate string) ([]Usa
 		return nil, err
 	}
 	return stats, nil
-}
-
-func (s *UsageLogic) Record(accountID, tokenID, providerID int64, modelName string, promptTokens, completionTokens int, quotaCost int64, requestID string) error {
-	log := model.UsageLog{
-		AccountID:        accountID,
-		TokenID:          tokenID,
-		ModelName:        modelName,
-		ProviderID:       providerID,
-		PromptTokens:     promptTokens,
-		CompletionTokens: completionTokens,
-		TotalTokens:      promptTokens + completionTokens,
-		QuotaCost:        quotaCost,
-		RequestID:        requestID,
-	}
-	return s.db.Create(&log).Error
-}
-
-func (s *UsageLogic) CleanupOldLogs(days int) error {
-	cutoff := time.Now().AddDate(0, 0, -days)
-	return s.db.Where("created_at < ?", cutoff).Delete(&model.UsageLog{}).Error
 }

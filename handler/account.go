@@ -24,6 +24,11 @@ func (h *AccountHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	account := middleware.AccountFromContext(r.Context())
+	if account != nil && !middleware.IsAdmin(r.Context()) {
+		req.CurrentAccountID = account.ID
+	}
+
 	resp, err := h.svc.List(&req)
 	if err != nil {
 		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))

@@ -1,6 +1,9 @@
 package route
 
 import (
+	"net/http"
+
+	"chihqiang/llm-gate/config"
 	"chihqiang/llm-gate/handler"
 	"chihqiang/llm-gate/logic"
 	"chihqiang/llm-gate/middleware"
@@ -13,6 +16,7 @@ import (
 func Register(server *httpx.Server, j *jwt.JWT,
 	authSvc *logic.AuthLogic,
 	logLogic *logic.LogLogic,
+	cfg config.Config,
 	authHandler *handler.AuthHandler,
 	accountHandler *handler.AccountHandler,
 	roleHandler *handler.RoleHandler,
@@ -26,17 +30,36 @@ func Register(server *httpx.Server, j *jwt.JWT,
 	usageHandler *handler.UsageHandler,
 	relayHandler *relay.RelayHandler,
 ) {
-	server.Use(httpx.WithCors("*"))
+	if cfg.Pprof.Enabled {
+		server.AddRoutes(httpx.PprofRoutes(""))
+	}
+
+	server.AddRoute(httpx.Route{
+		Method: http.MethodGet,
+		Path:   "/health",
+		Handler: func(w http.ResponseWriter, r *http.Request) {
+			httpx.OkJSON(w, map[string]string{"status": "ok"})
+		},
+	})
+
+	// CORS：从配置读取允许的来源
+	allowOrigins := cfg.CORS.AllowOrigins
+	if len(allowOrigins) == 0 {
+		allowOrigins = []string{"*"}
+	}
+	server.Use(httpx.WithCors(allowOrigins...))
 	server.Use(httpx.WithRecovery())
 	server.Use(httpx.WithLogger())
-	server.Use(middleware.Log(logLogic, []string{"/health", "/api/v1/sys/logs"}, []string{"OPTIONS", "HEAD"}))
+	// 日志中间件跳过：健康检查、日志查询、relay 转发路由（避免记录大请求体/敏感对话）
+	server.Use(middleware.Log(logLogic, []string{"/health", "/api/v1/sys/logs", "/v1/"}, []string{"OPTIONS", "HEAD"}))
 
 	authMw := middleware.Auth(j)
-	loadAccountMw := middleware.LoadAccount(authSvc)
+	loadAccountMw := middleware.LoadAccount(authSvc, cfg.App.AdminRoleID)
 
 	v1 := server.Group("/api/v1")
 
 	v1.AddRoute(httpx.Route{Method: "POST", Path: "/auth/login", Handler: authHandler.Login})
+	v1.AddRoute(httpx.Route{Method: "POST", Path: "/auth/refresh", Handler: authHandler.Refresh})
 
 	permMw := middleware.Permission("/api/v1/auth/me")
 	auth := v1.Group("", authMw, loadAccountMw, permMw)

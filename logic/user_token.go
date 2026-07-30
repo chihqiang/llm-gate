@@ -6,36 +6,44 @@ import (
 	"fmt"
 	"time"
 
+	"chihqiang/llm-gate/cache"
 	"chihqiang/llm-gate/model"
 
 	"gorm.io/gorm"
 )
 
 type TokenLogic struct {
-	db *gorm.DB
+	db        *gorm.DB
+	authCache cache.Cache
 }
 
-func NewTokenLogic(db *gorm.DB) *TokenLogic {
-	return &TokenLogic{db: db}
+func NewTokenLogic(db *gorm.DB, authCache cache.Cache) *TokenLogic {
+	return &TokenLogic{db: db, authCache: authCache}
 }
 
 type TokenListRequest struct {
-	Page      int   `form:"page" binding:"required,min=1"`
-	Size      int   `form:"size" binding:"required,min=1,max=1000"`
-	AccountID int64 `form:"account_id"`
+	Page             int   `form:"page" binding:"required,min=1"`
+	Size             int   `form:"size" binding:"required,min=1,max=1000"`
+	AccountID        int64 `form:"account_id"`
+	CurrentAccountID int64 `form:"-"`
 }
 
 type TokenVO struct {
 	ID        int64      `json:"id"`
 	AccountID int64      `json:"account_id"`
 	Name      string     `json:"name"`
-	Key       string     `json:"key"`
+	Key       string     `json:"-"`
 	KeyMasked string     `json:"key_masked"`
 	Quota     int64      `json:"quota"`
 	Status    bool       `json:"status"`
 	ExpiredAt *time.Time `json:"expired_at"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+type TokenCreateResponse struct {
+	TokenVO
+	Key string `json:"key"`
 }
 
 type TokenListResponse struct {
@@ -70,7 +78,9 @@ func (s *TokenLogic) List(req *TokenListRequest) (*TokenListResponse, error) {
 	var total int64
 
 	query := s.db.Model(&model.UserToken{})
-	if req.AccountID > 0 {
+	if req.CurrentAccountID > 0 {
+		query = query.Where("account_id = ?", req.CurrentAccountID)
+	} else if req.AccountID > 0 {
 		query = query.Where("account_id = ?", req.AccountID)
 	}
 
@@ -100,14 +110,6 @@ func (s *TokenLogic) GetByID(id int64) (*TokenVO, error) {
 	return &vo, nil
 }
 
-func (s *TokenLogic) GetByKey(key string) (*model.UserToken, error) {
-	var token model.UserToken
-	if err := s.db.Where("key = ? AND status = ?", key, true).First(&token).Error; err != nil {
-		return nil, err
-	}
-	return &token, nil
-}
-
 type TokenCreateRequest struct {
 	AccountID int64  `json:"account_id" binding:"required"`
 	Name      string `json:"name" binding:"required"`
@@ -122,7 +124,7 @@ func generateTokenKey() (string, error) {
 	return fmt.Sprintf("sk-%s", hex.EncodeToString(b)), nil
 }
 
-func (s *TokenLogic) Create(req *TokenCreateRequest) (*TokenVO, error) {
+func (s *TokenLogic) Create(req *TokenCreateRequest) (*TokenCreateResponse, error) {
 	key, err := generateTokenKey()
 	if err != nil {
 		return nil, err
@@ -138,8 +140,7 @@ func (s *TokenLogic) Create(req *TokenCreateRequest) (*TokenVO, error) {
 	if err := s.db.Create(&token).Error; err != nil {
 		return nil, err
 	}
-	vo := toTokenVO(token)
-	return &vo, nil
+	return &TokenCreateResponse{TokenVO: toTokenVO(token), Key: key}, nil
 }
 
 type TokenUpdateRequest struct {
@@ -158,11 +159,24 @@ func (s *TokenLogic) Update(req *TokenUpdateRequest) (*TokenVO, error) {
 	if err := s.db.Model(&model.UserToken{}).Where("id = ?", req.ID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
+	// 失效认证缓存，禁用/过期/改配额后立即生效
+	token, _ := s.GetByID(req.ID)
+	if token != nil {
+		s.authCache.Del(fmt.Sprintf("auth:%s", token.Key))
+	}
 	return s.GetByID(req.ID)
 }
 
 func (s *TokenLogic) Delete(id int64) error {
-	return s.db.Delete(&model.UserToken{}, id).Error
+	token, err := s.GetByID(id)
+	if err != nil {
+		return err
+	}
+	if err := s.db.Delete(&model.UserToken{}, id).Error; err != nil {
+		return err
+	}
+	s.authCache.Del(fmt.Sprintf("auth:%s", token.Key))
+	return nil
 }
 
 func (s *TokenLogic) RevealKey(id, accountID int64) (string, error) {
@@ -174,18 +188,4 @@ func (s *TokenLogic) RevealKey(id, accountID int64) (string, error) {
 		return "", fmt.Errorf("access denied")
 	}
 	return token.Key, nil
-}
-
-func (s *TokenLogic) DeductQuota(id int64, amount int64) error {
-	return s.db.Model(&model.UserToken{}).Where("id = ? AND quota >= ?", id, amount).
-		UpdateColumn("quota", gorm.Expr("quota - ?", amount)).Error
-}
-
-func (s *TokenLogic) RefundQuota(id int64, amount int64) error {
-	return s.db.Model(&model.UserToken{}).Where("id = ?", id).
-		UpdateColumn("quota", gorm.Expr("quota + ?", amount)).Error
-}
-
-func (s *TokenLogic) CleanupExpired() error {
-	return s.db.Where("expired_at IS NOT NULL AND expired_at < ?", time.Now()).Delete(&model.UserToken{}).Error
 }
