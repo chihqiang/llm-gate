@@ -47,7 +47,11 @@ function CopyButton({ tokenId }: { tokenId: number }) {
       className="shrink-0 text-muted-foreground hover:text-foreground"
       title="复制 Key"
     >
-      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? (
+        <Check className="h-3.5 w-3.5" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
     </button>
   )
 }

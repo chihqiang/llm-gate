@@ -4,7 +4,13 @@ import axios, {
   AxiosResponse,
   InternalAxiosRequestConfig,
 } from "axios"
-import { getAccessToken, removeToken, emitUnauthorized, getToken, setToken } from "@/lib/token"
+import {
+  getAccessToken,
+  removeToken,
+  emitUnauthorized,
+  getToken,
+  setToken,
+} from "@/lib/token"
 
 /**
  * 创建 Axios 实例
@@ -142,10 +148,13 @@ service.interceptors.response.use(
 
     // 401 未授权 → 尝试刷新 Token 后重试
     if (status === 401) {
-      const originalConfig = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
+      const originalConfig = error.config as InternalAxiosRequestConfig & {
+        _retry?: boolean
+      }
 
       // 登录/刷新接口 401 不重试
-      const isAuthEndpoint = originalConfig.url?.includes("/auth/login") ||
+      const isAuthEndpoint =
+        originalConfig.url?.includes("/auth/login") ||
         originalConfig.url?.includes("/auth/refresh")
 
       if (originalConfig._retry || isAuthEndpoint) {

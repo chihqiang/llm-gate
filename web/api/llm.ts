@@ -193,7 +193,9 @@ export async function tokenDeleteApi(id: number): Promise<void> {
 }
 
 export async function tokenRevealApi(id: number): Promise<string> {
-  const res = await request.get<{ key: string }>(`/api/v1/llm/tokens/${id}/reveal`)
+  const res = await request.get<{ key: string }>(
+    `/api/v1/llm/tokens/${id}/reveal`
+  )
   return res.key
 }
 

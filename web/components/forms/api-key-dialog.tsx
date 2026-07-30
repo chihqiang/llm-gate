@@ -52,7 +52,11 @@ function CopyBtn({ tokenId }: { tokenId: number }) {
   )
 }
 
-export function ApiKeyDialog({ open, onOpenChange, accountId }: ApiKeyDialogProps) {
+export function ApiKeyDialog({
+  open,
+  onOpenChange,
+  accountId,
+}: ApiKeyDialogProps) {
   const [tokens, setTokens] = useState<UserToken[]>([])
   const [loading, setLoading] = useState(false)
   const [newName, setNewName] = useState("")
@@ -61,7 +65,11 @@ export function ApiKeyDialog({ open, onOpenChange, accountId }: ApiKeyDialogProp
   const fetchTokens = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await tokenListApi({ page: 1, size: 50, account_id: accountId })
+      const res = await tokenListApi({
+        page: 1,
+        size: 50,
+        account_id: accountId,
+      })
       setTokens(res.data)
     } catch {
       toast.error("获取 Key 列表失败")
@@ -141,12 +149,19 @@ export function ApiKeyDialog({ open, onOpenChange, accountId }: ApiKeyDialogProp
 
         <div className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto">
           {loading ? (
-            <div className="py-8 text-center text-muted-foreground">加载中...</div>
+            <div className="py-8 text-center text-muted-foreground">
+              加载中...
+            </div>
           ) : tokens.length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground">暂无 Key</div>
+            <div className="py-8 text-center text-muted-foreground">
+              暂无 Key
+            </div>
           ) : (
             tokens.map((t) => (
-              <div key={t.id} className="flex items-center gap-2 rounded-lg border p-3">
+              <div
+                key={t.id}
+                className="flex items-center gap-2 rounded-lg border p-3"
+              >
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium">{t.name}</div>
                   <div className="mt-1 flex items-center gap-1">

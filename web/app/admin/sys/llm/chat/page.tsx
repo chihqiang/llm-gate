@@ -69,7 +69,13 @@ function formatTokens(n: number): string {
   return n.toString()
 }
 
-function CodeBlock({ className, children }: { className?: string; children?: React.ReactNode }) {
+function CodeBlock({
+  className,
+  children,
+}: {
+  className?: string
+  children?: React.ReactNode
+}) {
   const [copied, setCopied] = useState(false)
   const code = typeof children === "string" ? children : ""
   const lang = className?.replace("language-", "") || ""
@@ -86,13 +92,19 @@ function CodeBlock({ className, children }: { className?: string; children?: Rea
         <span>{lang || "code"}</span>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
         >
-          {copied ? <CheckCheck className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? (
+            <CheckCheck className="h-3.5 w-3.5" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" />
+          )}
           {copied ? "已复制" : "复制"}
         </button>
       </div>
-      <pre className="overflow-x-auto p-4 text-sm leading-relaxed">{children}</pre>
+      <pre className="overflow-x-auto p-4 text-sm leading-relaxed">
+        {children}
+      </pre>
     </div>
   )
 }
@@ -108,19 +120,31 @@ function MessageContent({ content }: { content: string }) {
           const isInline = !match && !className
           if (isInline) {
             return (
-              <code className="rounded bg-muted/80 px-1.5 py-0.5 text-sm font-mono" {...props}>
+              <code
+                className="rounded bg-muted/80 px-1.5 py-0.5 font-mono text-sm"
+                {...props}
+              >
                 {children}
               </code>
             )
           }
-          return <CodeBlock className={className}>{String(children).replace(/\n$/, "")}</CodeBlock>
+          return (
+            <CodeBlock className={className}>
+              {String(children).replace(/\n$/, "")}
+            </CodeBlock>
+          )
         },
         pre({ children }) {
           return <>{children}</>
         },
         a({ href, children }) {
           return (
-            <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 hover:no-underline">
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary underline underline-offset-2 hover:no-underline"
+            >
               {children}
             </a>
           )
@@ -191,7 +215,8 @@ export default function ChatPage() {
     if (!el) return
     const handleScroll = () => {
       const threshold = 100
-      autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+      autoScrollRef.current =
+        el.scrollHeight - el.scrollTop - el.clientHeight < threshold
     }
     el.addEventListener("scroll", handleScroll)
     return () => el.removeEventListener("scroll", handleScroll)
@@ -205,7 +230,6 @@ export default function ChatPage() {
       })
       .catch(() => setModels([]))
       .finally(() => setLoadingModels(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealedKey])
 
   useEffect(() => {
@@ -227,7 +251,8 @@ export default function ChatPage() {
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto"
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + "px"
+      textareaRef.current.style.height =
+        Math.min(textareaRef.current.scrollHeight, 200) + "px"
     }
   }, [input])
 
@@ -295,7 +320,11 @@ export default function ChatPage() {
   async function confirmEditTitle() {
     if (editingId && editingTitle.trim()) {
       await updateConversation(editingId, { title: editingTitle.trim() })
-      setConversations((prev) => prev.map((c) => (c.id === editingId ? { ...c, title: editingTitle.trim() } : c)))
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === editingId ? { ...c, title: editingTitle.trim() } : c
+        )
+      )
     }
     setEditingId(null)
     setEditingTitle("")
@@ -314,7 +343,10 @@ export default function ChatPage() {
         const updated = [...prev]
         const last = updated[updated.length - 1]
         if (last.role === "assistant" && !last.content) {
-          updated[updated.length - 1] = { ...last, content: "请先选择一个 API Key" }
+          updated[updated.length - 1] = {
+            ...last,
+            content: "请先选择一个 API Key",
+          }
         }
         return updated
       })
@@ -338,7 +370,10 @@ export default function ChatPage() {
               const updated = [...prev]
               const last = updated[updated.length - 1]
               if (last.role === "assistant") {
-                updated[updated.length - 1] = { ...last, content: last.content + delta }
+                updated[updated.length - 1] = {
+                  ...last,
+                  content: last.content + delta,
+                }
               }
               return updated
             })
@@ -383,7 +418,17 @@ export default function ChatPage() {
       title: generateTitle(msgs),
     })
     setConversations((prev) => {
-      const updated = prev.map((c) => (c.id === id ? { ...c, messages: msgs, model: selectedModel, title: generateTitle(msgs), updated_at: new Date().toISOString() } : c))
+      const updated = prev.map((c) =>
+        c.id === id
+          ? {
+              ...c,
+              messages: msgs,
+              model: selectedModel,
+              title: generateTitle(msgs),
+              updated_at: new Date().toISOString(),
+            }
+          : c
+      )
       updated.sort((a, b) => b.updated_at.localeCompare(a.updated_at))
       return updated
     })
@@ -405,7 +450,13 @@ export default function ChatPage() {
       })
       convId = conv.id
       setActiveId(convId)
-      setConversations((prev) => [{ ...conv, title: generateTitle([...messages, { role: "user", content }]) }, ...prev])
+      setConversations((prev) => [
+        {
+          ...conv,
+          title: generateTitle([...messages, { role: "user", content }]),
+        },
+        ...prev,
+      ])
     } else if (!hasHistory) {
       await updateConversation(convId, {
         title: generateTitle([...messages, { role: "user", content }]),
@@ -476,23 +527,40 @@ export default function ChatPage() {
   return (
     <div className="flex h-[calc(100vh-12rem)] gap-0 overflow-hidden">
       {/* Sidebar */}
-      <div className={cn("flex flex-col border-r transition-all duration-200 overflow-hidden", sidebarOpen ? "w-60 shrink-0" : "w-0 border-r-0")}>
-        <div className={cn("flex flex-col h-full", sidebarOpen ? "min-w-60" : "hidden")}>
-          <div className="p-3 border-b">
-            <Button variant="outline" className="w-full justify-start gap-2" onClick={handleNew}>
+      <div
+        className={cn(
+          "flex flex-col overflow-hidden border-r transition-all duration-200",
+          sidebarOpen ? "w-60 shrink-0" : "w-0 border-r-0"
+        )}
+      >
+        <div
+          className={cn(
+            "flex h-full flex-col",
+            sidebarOpen ? "min-w-60" : "hidden"
+          )}
+        >
+          <div className="border-b p-3">
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-2"
+              onClick={handleNew}
+            >
               <Plus className="h-4 w-4" /> 新对话
             </Button>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          <div className="flex-1 space-y-1 overflow-y-auto p-2">
             {loadingConvs ? (
               <div className="space-y-2 p-2">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-8 rounded-md bg-muted animate-pulse" />
+                  <div
+                    key={i}
+                    className="h-8 animate-pulse rounded-md bg-muted"
+                  />
                 ))}
               </div>
             ) : conversations.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-                <MessageSquare className="h-8 w-8 mb-2 opacity-30" />
+                <MessageSquare className="mb-2 h-8 w-8 opacity-30" />
                 <p className="text-sm">暂无历史对话</p>
               </div>
             ) : (
@@ -501,13 +569,15 @@ export default function ChatPage() {
                   key={conv.id}
                   onClick={() => handleSelect(conv.id)}
                   className={cn(
-                    "group flex items-center gap-2 rounded-md px-3 py-1.5 text-sm cursor-pointer transition-colors border-l-2",
-                    activeId === conv.id ? "bg-primary/5 text-primary border-l-primary" : "hover:bg-muted border-l-transparent"
+                    "group flex cursor-pointer items-center gap-2 rounded-md border-l-2 px-3 py-1.5 text-sm transition-colors",
+                    activeId === conv.id
+                      ? "border-l-primary bg-primary/5 text-primary"
+                      : "border-l-transparent hover:bg-muted"
                   )}
                 >
                   <MessageSquare className="h-4 w-4 shrink-0" />
                   {editingId === conv.id ? (
-                    <div className="flex-1 flex items-center gap-1">
+                    <div className="flex flex-1 items-center gap-1">
                       <Input
                         value={editingTitle}
                         onChange={(e) => setEditingTitle(e.target.value)}
@@ -515,14 +585,30 @@ export default function ChatPage() {
                           if (e.key === "Enter") confirmEditTitle()
                           if (e.key === "Escape") setEditingId(null)
                         }}
-                        className="h-7 text-sm px-1 py-0"
+                        className="h-7 px-1 py-0 text-sm"
                         onClick={(e) => e.stopPropagation()}
                         autoFocus
                       />
-                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={(e) => { e.stopPropagation(); confirmEditTitle() }}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          confirmEditTitle()
+                        }}
+                      >
                         <Check className="h-3 w-3" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={(e) => { e.stopPropagation(); setEditingId(null) }}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setEditingId(null)
+                        }}
+                      >
                         <X className="h-3 w-3" />
                       </Button>
                     </div>
@@ -530,11 +616,21 @@ export default function ChatPage() {
                     <span className="flex-1 truncate">{conv.title}</span>
                   )}
                   {editingId !== conv.id && (
-                    <div className="hidden group-hover:flex items-center gap-0.5">
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => startEditTitle(conv, e)}>
+                    <div className="hidden items-center gap-0.5 group-hover:flex">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={(e) => startEditTitle(conv, e)}
+                      >
                         <Pencil className="h-3 w-3" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={(e) => handleDelete(conv.id, e)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-destructive hover:text-destructive"
+                        onClick={(e) => handleDelete(conv.id, e)}
+                      >
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>
@@ -550,36 +646,54 @@ export default function ChatPage() {
       <Button
         variant="ghost"
         size="icon"
-        className="shrink-0 h-8 w-8 mt-2 -ml-4 z-10 rounded-full border bg-background shadow-sm"
+        className="z-10 mt-2 -ml-4 h-8 w-8 shrink-0 rounded-full border bg-background shadow-sm"
         onClick={() => setSidebarOpen(!sidebarOpen)}
       >
-        {sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        {sidebarOpen ? (
+          <ChevronLeft className="h-4 w-4" />
+        ) : (
+          <ChevronRight className="h-4 w-4" />
+        )}
       </Button>
 
       {/* Main chat area */}
-      <div className="flex-1 flex flex-col min-w-0 px-4 bg-muted/5">
+      <div className="flex min-w-0 flex-1 flex-col bg-muted/5 px-4">
         {/* Header */}
-        <div className="flex items-center gap-2 pb-3 mb-4">
-          <Bot className="h-5 w-5 text-primary shrink-0" />
+        <div className="mb-4 flex items-center gap-2 pb-3">
+          <Bot className="h-5 w-5 shrink-0 text-primary" />
           <h2 className="text-base font-semibold">在线聊天</h2>
         </div>
 
         {/* Messages */}
-        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto space-y-4 pr-2 mb-4">
+        <div
+          ref={messagesContainerRef}
+          className="mb-4 flex-1 space-y-4 overflow-y-auto pr-2"
+        >
           {messages.map((msg, i) => (
-            <div key={i} className={cn("group flex gap-3", msg.role === "user" ? "justify-end" : "justify-start")}>
+            <div
+              key={i}
+              className={cn(
+                "group flex gap-3",
+                msg.role === "user" ? "justify-end" : "justify-start"
+              )}
+            >
               {msg.role === "assistant" && (
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 mt-1">
+                <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
                   <Bot className="h-4 w-4 text-primary" />
                 </div>
               )}
-              <div className={cn("max-w-[75%] space-y-1", msg.role === "user" && "items-end flex flex-col")}>
+              <div
+                className={cn(
+                  "max-w-[75%] space-y-1",
+                  msg.role === "user" && "flex flex-col items-end"
+                )}
+              >
                 <div
                   className={cn(
                     "rounded-lg px-4 py-2.5 text-sm leading-relaxed",
                     msg.role === "user"
                       ? "bg-primary text-primary-foreground shadow-sm"
-                      : "bg-muted border shadow-sm"
+                      : "border bg-muted shadow-sm"
                   )}
                 >
                   {msg.role === "assistant" ? (
@@ -596,16 +710,22 @@ export default function ChatPage() {
                     <span className="whitespace-pre-wrap">{msg.content}</span>
                   )}
                 </div>
-                {msg.role === "assistant" && !streaming && i === messages.length - 1 && lastUsage && (
-                  <UsageBadge usage={lastUsage} />
-                )}
+                {msg.role === "assistant" &&
+                  !streaming &&
+                  i === messages.length - 1 &&
+                  lastUsage && <UsageBadge usage={lastUsage} />}
                 {/* Message actions */}
                 {msg.content && !streaming && (
-                  <div className={cn("flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity", msg.role === "user" ? "justify-end" : "justify-start")}>
+                  <div
+                    className={cn(
+                      "flex gap-1 opacity-0 transition-opacity group-hover:opacity-100",
+                      msg.role === "user" ? "justify-end" : "justify-start"
+                    )}
+                  >
                     {msg.content && (
                       <button
                         onClick={() => handleCopyMessage(msg.content)}
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1 py-0.5 rounded hover:bg-muted"
+                        className="flex items-center gap-1 rounded px-1 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       >
                         <Copy className="h-3 w-3" /> 复制
                       </button>
@@ -613,7 +733,7 @@ export default function ChatPage() {
                     {msg.role === "assistant" && i === messages.length - 1 && (
                       <button
                         onClick={handleRegenerate}
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1 py-0.5 rounded hover:bg-muted"
+                        className="flex items-center gap-1 rounded px-1 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                         disabled={streaming}
                       >
                         <RotateCcw className="h-3 w-3" /> 重新生成
@@ -622,7 +742,7 @@ export default function ChatPage() {
                     {messages.length > 1 && (
                       <button
                         onClick={() => handleDeleteMessage(i)}
-                        className="flex items-center gap-1 text-xs text-destructive/70 hover:text-destructive transition-colors px-1 py-0.5 rounded hover:bg-destructive/10"
+                        className="flex items-center gap-1 rounded px-1 py-0.5 text-xs text-destructive/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
                       >
                         <Trash className="h-3 w-3" /> 删除
                       </button>
@@ -631,7 +751,7 @@ export default function ChatPage() {
                 )}
               </div>
               {msg.role === "user" && (
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary mt-1">
+                <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary">
                   <User className="h-4 w-4 text-primary-foreground" />
                 </div>
               )}
@@ -642,38 +762,56 @@ export default function ChatPage() {
 
         {/* Toolbar + Input */}
         <div className="border-t pt-3 pb-2">
-          <div className="flex items-center gap-2 mb-3 px-0.5">
+          <div className="mb-3 flex items-center gap-2 px-0.5">
             <Select
               value={selectedTokenId?.toString() || ""}
               onValueChange={(v) => v && handleKeySelect(v)}
               disabled={loadingTokens || streaming || revealingToken}
             >
-              <SelectTrigger className="h-7 text-xs w-auto gap-1">
-                <SelectValue placeholder={loadingTokens ? "加载中..." : "API Key"} />
+              <SelectTrigger className="h-7 w-auto gap-1 text-xs">
+                <SelectValue
+                  placeholder={loadingTokens ? "加载中..." : "API Key"}
+                />
               </SelectTrigger>
               <SelectContent>
                 {tokens.map((t) => (
                   <SelectItem key={t.id} value={t.id.toString()}>
-                    <span className="text-xs">{t.name} ({t.key_masked})</span>
+                    <span className="text-xs">
+                      {t.name} ({t.key_masked})
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {revealingToken && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+            {revealingToken && (
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+            )}
             <Select
               value={selectedModel}
               onValueChange={(v) => v && setSelectedModel(v)}
               disabled={loadingModels || streaming || !revealedKey}
             >
-              <SelectTrigger className="h-7 text-xs w-auto gap-1">
-                <SelectValue placeholder={loadingModels ? "加载中..." : !revealedKey ? "请选 API Key" : "选择模型"} />
+              <SelectTrigger className="h-7 w-auto gap-1 text-xs">
+                <SelectValue
+                  placeholder={
+                    loadingModels
+                      ? "加载中..."
+                      : !revealedKey
+                        ? "请选 API Key"
+                        : "选择模型"
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {models.length === 0 && !loadingModels && (
-                  <div className="px-2 py-4 text-center text-xs text-muted-foreground">暂无可用模型</div>
+                  <div className="px-2 py-4 text-center text-xs text-muted-foreground">
+                    暂无可用模型
+                  </div>
                 )}
                 {models.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.id}</SelectItem>
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.id}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -684,13 +822,23 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={!revealedKey ? "请先选择 API Key" : "输入消息，Enter 发送，Shift+Enter 换行"}
+              placeholder={
+                !revealedKey
+                  ? "请先选择 API Key"
+                  : "输入消息，Enter 发送，Shift+Enter 换行"
+              }
               disabled={streaming || !selectedModel || !revealedKey}
               rows={1}
-              className="min-h-[44px] max-h-48 resize-none border-0 bg-transparent p-0 pr-12 focus-visible:ring-0 disabled:opacity-60"
+              className="max-h-48 min-h-[44px] resize-none border-0 bg-transparent p-0 pr-12 focus-visible:ring-0 disabled:opacity-60"
             />
             {streaming ? (
-              <Button variant="destructive" size="icon" onClick={handleStop} title="停止生成" className="absolute right-2 bottom-2 h-8 w-8 rounded-full">
+              <Button
+                variant="destructive"
+                size="icon"
+                onClick={handleStop}
+                title="停止生成"
+                className="absolute right-2 bottom-2 h-8 w-8 rounded-full"
+              >
                 <Square className="h-4 w-4 fill-current" />
               </Button>
             ) : (

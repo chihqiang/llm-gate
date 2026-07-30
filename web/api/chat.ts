@@ -46,7 +46,9 @@ export interface StreamChunk {
   usage?: ChatCompletionUsage
 }
 
-export async function listRelayModelsApi(apiKey: string): Promise<RelayModel[]> {
+export async function listRelayModelsApi(
+  apiKey: string
+): Promise<RelayModel[]> {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"
   const res = await fetch(`${baseUrl}/v1/models`, {
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -103,7 +105,10 @@ export async function chatCompletionStream(
               if (chunk.usage) {
                 lastUsage = chunk.usage
               }
-              if (chunk.choices?.[0]?.delta?.content || chunk.choices?.[0]?.finish_reason) {
+              if (
+                chunk.choices?.[0]?.delta?.content ||
+                chunk.choices?.[0]?.finish_reason
+              ) {
                 onChunk(chunk)
               }
             } catch {

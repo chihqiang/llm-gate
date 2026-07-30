@@ -97,7 +97,11 @@ export async function updateConversation(
         reject(new Error("Conversation not found"))
         return
       }
-      const updated = { ...existing, ...data, updated_at: new Date().toISOString() }
+      const updated = {
+        ...existing,
+        ...data,
+        updated_at: new Date().toISOString(),
+      }
       store.put(updated)
     }
     getRequest.onerror = () => reject(getRequest.error)
