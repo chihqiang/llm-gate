@@ -391,7 +391,15 @@ func (h *RelayHandler) resolveCached(modelName string) (*ResolveResult, error) {
 
 	providerKey := "provider:" + strconv.FormatInt(mc.ProviderID, 10)
 	var provider model.Provider
-	if ok, _ := h.providerCache.GetInto(providerKey, &provider); !ok {
+	v, cached := h.providerCache.Get(providerKey)
+	if cached {
+		if p, ok := v.(*model.Provider); ok {
+			provider = *p
+		} else {
+			cached = false
+		}
+	}
+	if !cached {
 		logger.Info("relay provider cache miss", logger.Int64("provider_id", mc.ProviderID))
 		if err := h.db.Where("id = ? AND status = ?", mc.ProviderID, true).First(&provider).Error; err != nil {
 			return nil, fmt.Errorf("provider not found or disabled")

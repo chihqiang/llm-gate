@@ -8,6 +8,7 @@ import {
   ShieldUser,
   UserCog,
   Users,
+  MessageSquare,
 } from "lucide-react"
 import { getAccount } from "@/lib/account"
 
@@ -79,6 +80,12 @@ export const menus: Menu[] = [
         label: "API Key",
         icon: Key,
         path: "/admin/sys/llm/tokens",
+      },
+      {
+        key: "chat",
+        label: "聊天",
+        icon: MessageSquare,
+        path: "/admin/sys/llm/chat",
       },
     ],
   },

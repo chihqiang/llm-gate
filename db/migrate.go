@@ -143,6 +143,11 @@ func seed(db *gorm.DB) error {
 		); err != nil {
 			return err
 		}
+		if err := createChild(llmDir,
+			model.Menu{MenuType: 2, Name: "聊天", Path: "/admin/sys/llm/chat", Component: "admin/sys/llm/chat/page", Icon: "MessageSquare", Sort: 4, APIURL: "", APIMethod: "*", Visible: true, Status: true, Remark: "聊天"},
+		); err != nil {
+			return err
+		}
 
 		role := model.Role{Name: "超级管理员", Sort: 1, Status: true, Remark: "超级管理员角色，拥有所有权限"}
 		if err := tx.Create(&role).Error; err != nil {
