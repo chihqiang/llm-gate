@@ -14,6 +14,7 @@ import (
 	"chihqiang/llm-gate/security"
 
 	"github.com/chihqiang/infra-go/logger"
+	"github.com/chihqiang/infra-go/trace"
 	"gorm.io/gorm"
 )
 
@@ -208,9 +209,19 @@ func (s *ProviderLogic) fetchUpstreamModels(ctx context.Context, providerID int6
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
+	ctx, span := trace.StartSpan(ctx, "sync models",
+		trace.WithAttributes(
+			trace.AttrInt64("provider_id", providerID),
+			trace.AttrString("provider", provider.Name),
+			trace.AttrString("upstream_url", provider.BaseURL),
+		),
+	)
+	defer span.End()
 	req = req.WithContext(ctx)
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
+	// 透传 W3C 链路上下文，便于上游接收端关联
+	trace.InjectHeader(ctx, req.Header)
 
 	resp, err := upstreamClient.Do(req)
 	if err != nil {

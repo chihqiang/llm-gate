@@ -28,6 +28,10 @@ export interface Log {
   account_name?: string
   /** 描述 */
   description?: string
+  /** 请求ID */
+  request_id?: string
+  /** 链路追踪ID */
+  trace_id?: string
 }
 
 // 日志列表请求
@@ -37,6 +41,7 @@ export interface LogListRequest extends PageRequest {
   account_id?: number
   request_method?: string
   request_path?: string
+  request_id?: string
 }
 
 // 日志列表响应

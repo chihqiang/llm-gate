@@ -14,6 +14,7 @@ import (
 	"chihqiang/llm-gate/config"
 
 	"github.com/chihqiang/infra-go/logger"
+	"github.com/chihqiang/infra-go/trace"
 )
 
 // notifier 通过 webhook 发送告警，同类事件带冷却期防轰炸。
@@ -69,7 +70,15 @@ func (n *notifier) Send(ctx context.Context, key, title, message string) {
 		logger.ErrorCtx(ctx, "alert: create request failed", logger.Err(err))
 		return
 	}
+	ctx, span := trace.StartSpan(ctx, "alert webhook", trace.WithAttributes(
+		trace.AttrString("key", key),
+		trace.AttrString("url", n.cfg.WebhookURL),
+	))
+	defer span.End()
+	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json")
+	// 透传 W3C 链路上下文，便于下游接收端关联
+	trace.InjectHeader(ctx, req.Header)
 	// 告警体签名：X-LLM-Gate-Signature: sha256=hex(hmac_sha256(secret, body))
 	if n.cfg.SignSecret != "" {
 		mac := hmac.New(sha256.New, []byte(n.cfg.SignSecret))

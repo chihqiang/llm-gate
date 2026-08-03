@@ -22,6 +22,7 @@ type LogListRequest struct {
 	RequestPath      string `form:"request_path"`
 	RequestIP        string `form:"request_ip"`
 	RequestMethod    string `form:"request_method"`
+	RequestID        string `form:"request_id"`
 	CurrentAccountID int64  `form:"-"`
 }
 
@@ -46,6 +47,9 @@ func (s *LogLogic) List(ctx context.Context, req *LogListRequest) (*LogListRespo
 	}
 	if req.RequestMethod != "" {
 		query = query.Where("request_method = ?", req.RequestMethod)
+	}
+	if req.RequestID != "" {
+		query = query.Where("request_id = ?", req.RequestID)
 	}
 
 	if err := query.Count(&total).Error; err != nil {

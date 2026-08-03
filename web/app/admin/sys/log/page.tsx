@@ -29,6 +29,12 @@ const searchFields: SearchField[] = [
       { value: "DELETE", label: "DELETE" },
     ],
   },
+  {
+    name: "request_id",
+    label: "请求ID",
+    type: "input",
+    placeholder: "请求ID",
+  },
 ]
 
 const methodColorMap: Record<string, string> = {
@@ -76,6 +82,24 @@ const columns: DataListColumn<Log>[] = [
     key: "request_ip",
     header: "IP地址",
     cell: (row) => row.request_ip || "-",
+  },
+  {
+    key: "request_id",
+    header: "请求ID",
+    cell: (row) => (
+      <span className="font-mono text-xs text-muted-foreground">
+        {row.request_id || "-"}
+      </span>
+    ),
+  },
+  {
+    key: "trace_id",
+    header: "Trace ID",
+    cell: (row) => (
+      <span className="font-mono text-xs text-muted-foreground">
+        {row.trace_id || "-"}
+      </span>
+    ),
   },
   {
     key: "response_code",
