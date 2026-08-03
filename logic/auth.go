@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -41,23 +42,23 @@ type LoginResponse struct {
 	RefreshToken string `json:"refresh_token,omitempty"`
 }
 
-func (s *AuthLogic) Login(req *LoginRequest) (*LoginResponse, error) {
+func (s *AuthLogic) Login(ctx context.Context, req *LoginRequest) (*LoginResponse, error) {
 	var account model.Account
-	if err := s.db.Where("email = ?", req.Email).First(&account).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("email = ?", req.Email).First(&account).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			logger.Warn("auth login failed: email not found", logger.String("email", req.Email))
+			logger.WarnCtx(ctx, "auth login failed: email not found", logger.String("email", req.Email))
 			return nil, errors.New("邮箱或密码错误")
 		}
 		return nil, err
 	}
 
 	if !account.Status {
-		logger.Warn("auth login failed: account disabled", logger.Int64("account_id", account.ID))
+		logger.WarnCtx(ctx, "auth login failed: account disabled", logger.Int64("account_id", account.ID))
 		return nil, errors.New("账号已被禁用")
 	}
 
 	if err := hash.BcryptCompare(account.Password, req.Password); err != nil {
-		logger.Warn("auth login failed: wrong password", logger.Int64("account_id", account.ID))
+		logger.WarnCtx(ctx, "auth login failed: wrong password", logger.Int64("account_id", account.ID))
 		return nil, errors.New("邮箱或密码错误")
 	}
 
@@ -71,7 +72,7 @@ func (s *AuthLogic) Login(req *LoginRequest) (*LoginResponse, error) {
 		return nil, err
 	}
 
-	logger.Info("auth login ok", logger.Int64("account_id", account.ID), logger.String("email", account.Email))
+	logger.InfoCtx(ctx, "auth login ok", logger.Int64("account_id", account.ID), logger.String("email", account.Email))
 	return &LoginResponse{
 		ID:           account.ID,
 		AccessToken:  tokenPair.AccessToken,
@@ -85,7 +86,7 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
-func (s *AuthLogic) Refresh(req *RefreshRequest) (*LoginResponse, error) {
+func (s *AuthLogic) Refresh(ctx context.Context, req *RefreshRequest) (*LoginResponse, error) {
 	tokenPair, err := s.j.RefreshToken(req.RefreshToken)
 	if err != nil {
 		return nil, errors.New("刷新令牌无效或已过期")
@@ -119,9 +120,9 @@ type ProfileResponse struct {
 	Menus  []model.Menu `json:"menus"`
 }
 
-func (s *AuthLogic) GetProfile(accountID int64, isAdmin bool) (*ProfileResponse, error) {
+func (s *AuthLogic) GetProfile(ctx context.Context, accountID int64, isAdmin bool) (*ProfileResponse, error) {
 	var account model.Account
-	if err := s.db.Preload("Roles", func(db *gorm.DB) *gorm.DB {
+	if err := s.db.WithContext(ctx).Preload("Roles", func(db *gorm.DB) *gorm.DB {
 		return db.Where("status = ?", true)
 	}).First(&account, accountID).Error; err != nil {
 		return nil, err
@@ -129,11 +130,11 @@ func (s *AuthLogic) GetProfile(accountID int64, isAdmin bool) (*ProfileResponse,
 
 	var menus []model.Menu
 	if isAdmin {
-		if err := s.db.Where("status = ?", true).Order("sort ASC").Find(&menus).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("status = ?", true).Order("sort ASC").Find(&menus).Error; err != nil {
 			return nil, err
 		}
 	} else {
-		if err := s.db.Preload("Roles.Menus", func(db *gorm.DB) *gorm.DB {
+		if err := s.db.WithContext(ctx).Preload("Roles.Menus", func(db *gorm.DB) *gorm.DB {
 			return db.Where("status = ?", true)
 		}).First(&account, accountID).Error; err != nil {
 			return nil, err
@@ -158,15 +159,15 @@ func (s *AuthLogic) GetProfile(accountID int64, isAdmin bool) (*ProfileResponse,
 	}, nil
 }
 
-func (s *AuthLogic) GetAccountByID(accountID int64) (*model.Account, error) {
+func (s *AuthLogic) GetAccountByID(ctx context.Context, accountID int64) (*model.Account, error) {
 	cacheKey := fmt.Sprintf("account:%d", accountID)
 	var account model.Account
-	if ok, _ := s.accountCache.GetInto(cacheKey, &account); ok {
+	if ok, _ := s.accountCache.GetInto(ctx, cacheKey, &account); ok {
 		return &account, nil
 	}
-	logger.Info("auth account cache miss", logger.Int64("account_id", accountID))
+	logger.InfoCtx(ctx, "auth account cache miss", logger.Int64("account_id", accountID))
 
-	if err := s.db.Preload("Roles", func(db *gorm.DB) *gorm.DB {
+	if err := s.db.WithContext(ctx).Preload("Roles", func(db *gorm.DB) *gorm.DB {
 		return db.Where("status = ?", true)
 	}).Preload("Roles.Menus", func(db *gorm.DB) *gorm.DB {
 		return db.Where("status = ?", true)
@@ -174,6 +175,6 @@ func (s *AuthLogic) GetAccountByID(accountID int64) (*model.Account, error) {
 		return nil, err
 	}
 
-	s.accountCache.Set(cacheKey, &account, 10*time.Second)
+	s.accountCache.Set(ctx, cacheKey, &account, 10*time.Second)
 	return &account, nil
 }

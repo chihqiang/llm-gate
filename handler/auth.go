@@ -18,47 +18,50 @@ func NewAuthHandler(svc *logic.AuthLogic) *AuthHandler {
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.LoginRequest
 	if err := httpx.MustBindJSON(w, r, &req); err != nil {
 		return
 	}
 
-	resp, err := h.svc.Login(&req)
+	resp, err := h.svc.Login(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, resp)
+	httpx.OkJSONCtx(ctx, w, resp)
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.RefreshRequest
 	if err := httpx.MustBindJSON(w, r, &req); err != nil {
 		return
 	}
 
-	resp, err := h.svc.Refresh(&req)
+	resp, err := h.svc.Refresh(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, resp)
+	httpx.OkJSONCtx(ctx, w, resp)
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
-	account := middleware.AccountFromContext(r.Context())
+	ctx := r.Context()
+	account := middleware.AccountFromContext(ctx)
 	if account == nil {
-		httpx.WriteHTTPError(w, httpx.CodeUnauthorized, "未登录")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeUnauthorized, "未登录")
 		return
 	}
 
-	profile, err := h.svc.GetProfile(account.ID, middleware.IsAdmin(r.Context()))
+	profile, err := h.svc.GetProfile(ctx, account.ID, middleware.IsAdmin(ctx))
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, profile)
+	httpx.OkJSONCtx(ctx, w, profile)
 }

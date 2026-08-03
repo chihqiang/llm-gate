@@ -18,65 +18,70 @@ func NewRoleHandler(svc *logic.RoleLogic) *RoleHandler {
 }
 
 func (h *RoleHandler) List(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.RoleListRequest
 	if err := httpx.MustBindQuery(w, r, &req); err != nil {
 		return
 	}
 
-	resp, err := h.svc.List(&req)
+	resp, err := h.svc.List(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, resp)
+	httpx.OkJSONCtx(ctx, w, resp)
 }
 
 func (h *RoleHandler) AllList(w http.ResponseWriter, r *http.Request) {
-	roles, err := h.svc.AllList()
+	ctx := r.Context()
+	roles, err := h.svc.AllList(ctx)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, roles)
+	httpx.OkJSONCtx(ctx, w, roles)
 }
 
 func (h *RoleHandler) Detail(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
 
-	role, err := h.svc.GetByID(id)
+	role, err := h.svc.GetByID(ctx, id)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, role)
+	httpx.OkJSONCtx(ctx, w, role)
 }
 
 func (h *RoleHandler) Create(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.RoleCreateRequest
 	if err := httpx.MustBindJSON(w, r, &req); err != nil {
 		return
 	}
 
-	role, err := h.svc.Create(&req)
+	role, err := h.svc.Create(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, role)
+	httpx.OkJSONCtx(ctx, w, role)
 }
 
 func (h *RoleHandler) Update(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
 
@@ -86,34 +91,36 @@ func (h *RoleHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	req.ID = id
 
-	role, err := h.svc.Update(&req)
+	role, err := h.svc.Update(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, role)
+	httpx.OkJSONCtx(ctx, w, role)
 }
 
 func (h *RoleHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
 
-	if err := h.svc.Delete(id); err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+	if err := h.svc.Delete(ctx, id); err != nil {
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, nil)
+	httpx.OkJSONCtx(ctx, w, nil)
 }
 
 func (h *RoleHandler) AssociateMenus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
 
@@ -122,10 +129,10 @@ func (h *RoleHandler) AssociateMenus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.AssociateMenus(id, req.MenuIDs); err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+	if err := h.svc.AssociateMenus(ctx, id, req.MenuIDs); err != nil {
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, nil)
+	httpx.OkJSONCtx(ctx, w, nil)
 }

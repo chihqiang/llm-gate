@@ -25,10 +25,10 @@ func LoadAccount(authSvc *logic.AuthLogic, adminRoleID int64) httpx.Middleware {
 				return
 			}
 
-			account, err := authSvc.GetAccountByID(int64(id))
+			account, err := authSvc.GetAccountByID(r.Context(), int64(id))
 			if err != nil {
-				logger.Error("load account failed", logger.Err(err), logger.Int64("account_id", int64(id)))
-				httpx.WriteHTTPError(w, httpx.CodeDefaultError, "获取用户信息失败")
+				logger.ErrorCtx(r.Context(), "load account failed", logger.Err(err), logger.Int64("account_id", int64(id)))
+				httpx.WriteHTTPErrorCtx(r.Context(), w, httpx.CodeDefaultError, "获取用户信息失败")
 				return
 			}
 

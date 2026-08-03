@@ -20,6 +20,7 @@ import (
 	"github.com/chihqiang/infra-go/logger"
 	"github.com/chihqiang/infra-go/orm"
 	"github.com/chihqiang/infra-go/redisx"
+	"github.com/chihqiang/infra-go/trace"
 	"gorm.io/gorm"
 )
 
@@ -38,6 +39,10 @@ func main() {
 	log := logger.New(cfg.Logger)
 	defer log.Sync()
 	logger.SetGlobal(log)
+
+	// 链路追踪：启动全局 TracerProvider（Endpoint 为空时 span 不导出，但 trace_id 仍会注入日志）
+	trace.StartAgent(cfg.Trace)
+	defer trace.StopAgent()
 
 	// 密钥加密器：security.encrypt_key 或 JWT Secret 派生
 	cipher, err := security.New(cfg.Security.EncryptKey, cfg.JWT.Secret)

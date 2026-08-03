@@ -19,97 +19,103 @@ func NewBillingHandler(svc *logic.BillingLogic) *BillingHandler {
 }
 
 func (h *BillingHandler) ListOrders(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.RechargeOrderListRequest
 	if err := httpx.MustBindQuery(w, r, &req); err != nil {
 		return
 	}
-	resp, err := h.svc.ListOrders(&req)
+	resp, err := h.svc.ListOrders(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
-	httpx.OkJSON(w, resp)
+	httpx.OkJSONCtx(ctx, w, resp)
 }
 
 func (h *BillingHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.RechargeOrderCreateRequest
 	if err := httpx.MustBindJSON(w, r, &req); err != nil {
 		return
 	}
-	account := middleware.AccountFromContext(r.Context())
+	account := middleware.AccountFromContext(ctx)
 	var operatorID int64
 	if account != nil {
 		operatorID = account.ID
 	}
-	order, err := h.svc.CreateOrder(&req, operatorID)
+	order, err := h.svc.CreateOrder(ctx, &req, operatorID)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
-	httpx.OkJSON(w, order)
+	httpx.OkJSONCtx(ctx, w, order)
 }
 
 func (h *BillingHandler) ConfirmOrder(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
-	account := middleware.AccountFromContext(r.Context())
+	account := middleware.AccountFromContext(ctx)
 	var operatorID int64
 	if account != nil {
 		operatorID = account.ID
 	}
-	if err := h.svc.ConfirmOrder(id, operatorID); err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+	if err := h.svc.ConfirmOrder(ctx, id, operatorID); err != nil {
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
-	httpx.OkJSON(w, nil)
+	httpx.OkJSONCtx(ctx, w, nil)
 }
 
 func (h *BillingHandler) CancelOrder(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
-	account := middleware.AccountFromContext(r.Context())
+	account := middleware.AccountFromContext(ctx)
 	var operatorID int64
 	if account != nil {
 		operatorID = account.ID
 	}
-	if err := h.svc.CancelOrder(id, operatorID); err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+	if err := h.svc.CancelOrder(ctx, id, operatorID); err != nil {
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
-	httpx.OkJSON(w, nil)
+	httpx.OkJSONCtx(ctx, w, nil)
 }
 
 func (h *BillingHandler) AdjustBalance(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req struct {
-		AccountID int64  `json:"account_id" binding:"required"`
-		AmountCents int64 `json:"amount_cents" binding:"required"`
-		Remark    string `json:"remark"`
+		AccountID   int64  `json:"account_id" binding:"required"`
+		AmountCents int64  `json:"amount_cents" binding:"required"`
+		Remark      string `json:"remark"`
 	}
 	if err := httpx.MustBindJSON(w, r, &req); err != nil {
 		return
 	}
-	if err := h.svc.AdjustBalance(req.AccountID, req.AmountCents, req.Remark, 0); err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+	if err := h.svc.AdjustBalance(ctx, req.AccountID, req.AmountCents, req.Remark, 0); err != nil {
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
-	httpx.OkJSON(w, nil)
+	httpx.OkJSONCtx(ctx, w, nil)
 }
 
 func (h *BillingHandler) ListTransactions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.TransactionListRequest
 	if err := httpx.MustBindQuery(w, r, &req); err != nil {
 		return
 	}
-	resp, err := h.svc.ListTransactions(&req)
+	resp, err := h.svc.ListTransactions(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
-	httpx.OkJSON(w, resp)
+	httpx.OkJSONCtx(ctx, w, resp)
 }

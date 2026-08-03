@@ -1,6 +1,8 @@
 package logic
 
 import (
+	"context"
+
 	"chihqiang/llm-gate/model"
 
 	"gorm.io/gorm"
@@ -28,11 +30,11 @@ type LogListResponse struct {
 	Total int64       `json:"total"`
 }
 
-func (s *LogLogic) List(req *LogListRequest) (*LogListResponse, error) {
+func (s *LogLogic) List(ctx context.Context, req *LogListRequest) (*LogListResponse, error) {
 	var logs []model.Log
 	var total int64
 
-	query := s.db.Model(&model.Log{})
+	query := s.db.WithContext(ctx).Model(&model.Log{})
 	if req.CurrentAccountID > 0 {
 		query = query.Where("account_id = ?", req.CurrentAccountID)
 	}

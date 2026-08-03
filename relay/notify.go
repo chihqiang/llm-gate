@@ -2,6 +2,7 @@ package relay
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -28,14 +29,14 @@ func newNotifier(cfg config.AlertConfig) *notifier {
 		return nil
 	}
 	return &notifier{
-		cfg: cfg,
-		client: &http.Client{Timeout: 5 * time.Second},
+		cfg:      cfg,
+		client:   &http.Client{Timeout: 5 * time.Second},
 		lastSent: make(map[string]time.Time),
 	}
 }
 
 // Send 发送告警。key 用于冷却期去重（同类事件只发一次）。
-func (n *notifier) Send(key, title, message string) {
+func (n *notifier) Send(ctx context.Context, key, title, message string) {
 	if n == nil || !n.cfg.Enabled || n.cfg.WebhookURL == "" {
 		return
 	}
@@ -53,19 +54,19 @@ func (n *notifier) Send(key, title, message string) {
 	n.mu.Unlock()
 
 	payload := map[string]string{
-		"title":     title,
-		"message":   message,
-		"time":      time.Now().Format(time.RFC3339),
-		"source":    "llm-gate",
+		"title":   title,
+		"message": message,
+		"time":    time.Now().Format(time.RFC3339),
+		"source":  "llm-gate",
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return
 	}
 
-	req, err := http.NewRequest(http.MethodPost, n.cfg.WebhookURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.cfg.WebhookURL, bytes.NewReader(body))
 	if err != nil {
-		logger.Error("alert: create request failed", logger.Err(err))
+		logger.ErrorCtx(ctx, "alert: create request failed", logger.Err(err))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -77,7 +78,7 @@ func (n *notifier) Send(key, title, message string) {
 	}
 
 	if resp, err := n.client.Do(req); err != nil {
-		logger.Error("alert: webhook send failed", logger.Err(err))
+		logger.ErrorCtx(ctx, "alert: webhook send failed", logger.Err(err))
 	} else {
 		resp.Body.Close()
 	}

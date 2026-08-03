@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -20,11 +21,11 @@ func NewMemory() *MemoryCache {
 	}
 }
 
-func (m *MemoryCache) Get(key string) (any, bool) {
+func (m *MemoryCache) Get(_ context.Context, key string) (any, bool) {
 	return m.c.Get(key)
 }
 
-func (m *MemoryCache) GetInto(key string, dest any) (bool, error) {
+func (m *MemoryCache) GetInto(_ context.Context, key string, dest any) (bool, error) {
 	v, ok := m.c.Get(key)
 	if !ok {
 		return false, nil
@@ -39,16 +40,16 @@ func (m *MemoryCache) GetInto(key string, dest any) (bool, error) {
 	return true, nil
 }
 
-func (m *MemoryCache) Set(key string, value any, ttl time.Duration) {
+func (m *MemoryCache) Set(_ context.Context, key string, value any, ttl time.Duration) {
 	m.c.Set(key, value, ttl)
 }
 
-func (m *MemoryCache) Del(key string) {
+func (m *MemoryCache) Del(_ context.Context, key string) {
 	m.c.Delete(key)
 }
 
 // FlushByPrefix 遍历并删除所有以 prefix 开头的键。
-func (m *MemoryCache) FlushByPrefix(prefix string) {
+func (m *MemoryCache) FlushByPrefix(_ context.Context, prefix string) {
 	for k := range m.c.Items() {
 		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
 			m.c.Delete(k)

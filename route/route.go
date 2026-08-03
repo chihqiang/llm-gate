@@ -43,6 +43,9 @@ func Register(server *httpx.Server, j *jwt.JWT,
 		},
 	})
 
+	// 链路追踪：先生成/透传 request id，再为请求建立根 span，后续中间件与业务均可读取
+	server.Use(httpx.WithRequestID())
+	server.Use(middleware.Trace())
 	// CORS：从配置读取允许的来源
 	allowOrigins := cfg.CORS.AllowOrigins
 	if len(allowOrigins) == 0 {

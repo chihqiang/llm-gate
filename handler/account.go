@@ -19,60 +19,64 @@ func NewAccountHandler(svc *logic.AccountLogic) *AccountHandler {
 }
 
 func (h *AccountHandler) List(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.AccountListRequest
 	if err := httpx.MustBindQuery(w, r, &req); err != nil {
 		return
 	}
 
-	account := middleware.AccountFromContext(r.Context())
-	if account != nil && !middleware.IsAdmin(r.Context()) {
+	account := middleware.AccountFromContext(ctx)
+	if account != nil && !middleware.IsAdmin(ctx) {
 		req.CurrentAccountID = account.ID
 	}
 
-	resp, err := h.svc.List(&req)
+	resp, err := h.svc.List(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, resp)
+	httpx.OkJSONCtx(ctx, w, resp)
 }
 
 func (h *AccountHandler) Detail(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
 
-	account, err := h.svc.GetByID(id)
+	account, err := h.svc.GetByID(ctx, id)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, account)
+	httpx.OkJSONCtx(ctx, w, account)
 }
 
 func (h *AccountHandler) Create(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.AccountCreateRequest
 	if err := httpx.MustBindJSON(w, r, &req); err != nil {
 		return
 	}
 
-	account, err := h.svc.Create(&req)
+	account, err := h.svc.Create(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, account)
+	httpx.OkJSONCtx(ctx, w, account)
 }
 
 func (h *AccountHandler) Update(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
 
@@ -82,32 +86,33 @@ func (h *AccountHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	req.ID = id
 
-	account, err := h.svc.Update(&req)
+	account, err := h.svc.Update(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, account)
+	httpx.OkJSONCtx(ctx, w, account)
 }
 
 func (h *AccountHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
 
-	account := middleware.AccountFromContext(r.Context())
+	account := middleware.AccountFromContext(ctx)
 	if account != nil && account.ID == id {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "不能删除自己的账号")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "不能删除自己的账号")
 		return
 	}
 
-	if err := h.svc.Delete(id); err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+	if err := h.svc.Delete(ctx, id); err != nil {
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, nil)
+	httpx.OkJSONCtx(ctx, w, nil)
 }

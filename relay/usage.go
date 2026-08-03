@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"context"
 	"errors"
 	"math"
 
@@ -14,8 +15,8 @@ var ErrInsufficientQuota = errors.New("insufficient quota")
 var ErrQuotaExhausted = errors.New("key quota exhausted")
 
 // DeductBalance 原子预扣账户余额，余额不足返回 ErrInsufficientQuota。
-func DeductBalance(db *gorm.DB, accountID, cents int64) error {
-	return DeductBalanceTx(db, accountID, cents)
+func DeductBalance(ctx context.Context, db *gorm.DB, accountID, cents int64) error {
+	return DeductBalanceTx(db.WithContext(ctx), accountID, cents)
 }
 
 func DeductBalanceTx(tx *gorm.DB, accountID, cents int64) error {
@@ -25,7 +26,7 @@ func DeductBalanceTx(tx *gorm.DB, accountID, cents int64) error {
 	result := tx.Model(&model.Account{}).Where("id = ? AND balance_cents >= ?", accountID, cents).
 		UpdateColumn("balance_cents", gorm.Expr("balance_cents - ?", cents))
 	if result.Error != nil {
-		logger.Error("relay: deduct balance db error",
+		logger.ErrorCtx(tx.Statement.Context, "relay: deduct balance db error",
 			logger.Err(result.Error), logger.Int64("account_id", accountID), logger.Int64("cents", cents))
 		return result.Error
 	}
@@ -36,8 +37,8 @@ func DeductBalanceTx(tx *gorm.DB, accountID, cents int64) error {
 }
 
 // RefundBalance 退还账户余额。
-func RefundBalance(db *gorm.DB, accountID, cents int64) error {
-	return RefundBalanceTx(db, accountID, cents)
+func RefundBalance(ctx context.Context, db *gorm.DB, accountID, cents int64) error {
+	return RefundBalanceTx(db.WithContext(ctx), accountID, cents)
 }
 
 func RefundBalanceTx(tx *gorm.DB, accountID, cents int64) error {
@@ -47,15 +48,15 @@ func RefundBalanceTx(tx *gorm.DB, accountID, cents int64) error {
 	err := tx.Model(&model.Account{}).Where("id = ?", accountID).
 		UpdateColumn("balance_cents", gorm.Expr("balance_cents + ?", cents)).Error
 	if err != nil {
-		logger.Error("relay: refund balance db error",
+		logger.ErrorCtx(tx.Statement.Context, "relay: refund balance db error",
 			logger.Err(err), logger.Int64("account_id", accountID), logger.Int64("cents", cents))
 	}
 	return err
 }
 
 // GetAccountBalance 读取账户当前余额。
-func GetAccountBalance(db *gorm.DB, accountID int64) (int64, error) {
-	return GetAccountBalanceTx(db, accountID)
+func GetAccountBalance(ctx context.Context, db *gorm.DB, accountID int64) (int64, error) {
+	return GetAccountBalanceTx(db.WithContext(ctx), accountID)
 }
 
 func GetAccountBalanceTx(tx *gorm.DB, accountID int64) (int64, error) {
@@ -67,8 +68,8 @@ func GetAccountBalanceTx(tx *gorm.DB, accountID int64) (int64, error) {
 }
 
 // AddTokenSpent 累加 Token 累计消费。
-func AddTokenSpent(db *gorm.DB, tokenID, cents int64) error {
-	return AddTokenSpentTx(db, tokenID, cents)
+func AddTokenSpent(ctx context.Context, db *gorm.DB, tokenID, cents int64) error {
+	return AddTokenSpentTx(db.WithContext(ctx), tokenID, cents)
 }
 
 func AddTokenSpentTx(tx *gorm.DB, tokenID, cents int64) error {

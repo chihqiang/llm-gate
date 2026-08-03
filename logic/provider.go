@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,10 +33,10 @@ func NewProviderLogic(db *gorm.DB, providerCache cache.Cache, cipher *security.C
 }
 
 // decryptKey 解密服务商 API 密钥，解密失败返回错误。
-func (s *ProviderLogic) decryptKey(encrypted string) (string, error) {
+func (s *ProviderLogic) decryptKey(ctx context.Context, encrypted string) (string, error) {
 	key, err := s.cipher.Decrypt(encrypted)
 	if err != nil {
-		logger.Error("provider: decrypt api key failed", logger.Err(err))
+		logger.ErrorCtx(ctx, "provider: decrypt api key failed", logger.Err(err))
 		return "", err
 	}
 	return key, nil
@@ -52,11 +53,11 @@ type ProviderListResponse struct {
 	Total int64            `json:"total"`
 }
 
-func (s *ProviderLogic) List(req *ProviderListRequest) (*ProviderListResponse, error) {
+func (s *ProviderLogic) List(ctx context.Context, req *ProviderListRequest) (*ProviderListResponse, error) {
 	var providers []model.Provider
 	var total int64
 
-	query := s.db.Model(&model.Provider{})
+	query := s.db.WithContext(ctx).Model(&model.Provider{})
 	if req.Name != "" {
 		query = query.Where("name LIKE ?", "%"+req.Name+"%")
 	}
@@ -73,15 +74,15 @@ func (s *ProviderLogic) List(req *ProviderListRequest) (*ProviderListResponse, e
 	return &ProviderListResponse{Data: providers, Total: total}, nil
 }
 
-func (s *ProviderLogic) AllList() ([]model.Provider, error) {
+func (s *ProviderLogic) AllList(ctx context.Context) ([]model.Provider, error) {
 	var providers []model.Provider
-	err := s.db.Where("status = ?", true).Order("priority ASC, id ASC").Find(&providers).Error
+	err := s.db.WithContext(ctx).Where("status = ?", true).Order("priority ASC, id ASC").Find(&providers).Error
 	return providers, err
 }
 
-func (s *ProviderLogic) GetByID(id int64) (*model.Provider, error) {
+func (s *ProviderLogic) GetByID(ctx context.Context, id int64) (*model.Provider, error) {
 	var provider model.Provider
-	if err := s.db.First(&provider, id).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&provider, id).Error; err != nil {
 		return nil, err
 	}
 	return &provider, nil
@@ -97,7 +98,7 @@ type ProviderCreateRequest struct {
 	Remark   string `json:"remark"`
 }
 
-func (s *ProviderLogic) Create(req *ProviderCreateRequest) (*model.Provider, error) {
+func (s *ProviderLogic) Create(ctx context.Context, req *ProviderCreateRequest) (*model.Provider, error) {
 	encrypted, err := s.cipher.Encrypt(req.APIKey)
 	if err != nil {
 		return nil, err
@@ -111,10 +112,10 @@ func (s *ProviderLogic) Create(req *ProviderCreateRequest) (*model.Provider, err
 		Weight:   req.Weight,
 		Remark:   req.Remark,
 	}
-	if err := s.db.Create(&provider).Error; err != nil {
+	if err := s.db.WithContext(ctx).Create(&provider).Error; err != nil {
 		return nil, err
 	}
-	s.invalidateRoutingCaches()
+	s.invalidateRoutingCaches(ctx)
 	return &provider, nil
 }
 
@@ -129,7 +130,7 @@ type ProviderUpdateRequest struct {
 	Remark   string `json:"remark"`
 }
 
-func (s *ProviderLogic) Update(req *ProviderUpdateRequest) (*model.Provider, error) {
+func (s *ProviderLogic) Update(ctx context.Context, req *ProviderUpdateRequest) (*model.Provider, error) {
 	updates := map[string]interface{}{
 		"name":     req.Name,
 		"base_url": req.BaseURL,
@@ -146,29 +147,29 @@ func (s *ProviderLogic) Update(req *ProviderUpdateRequest) (*model.Provider, err
 		updates["api_key"] = encrypted
 	}
 
-	if err := s.db.Model(&model.Provider{}).Where("id = ?", req.ID).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&model.Provider{}).Where("id = ?", req.ID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	s.providerCache.Del(fmt.Sprintf("provider:%d", req.ID))
-	s.invalidateRoutingCaches()
-	return s.GetByID(req.ID)
+	s.providerCache.Del(ctx, fmt.Sprintf("provider:%d", req.ID))
+	s.invalidateRoutingCaches(ctx)
+	return s.GetByID(ctx, req.ID)
 }
 
-func (s *ProviderLogic) Delete(id int64) error {
-	if err := s.db.Delete(&model.Provider{}, id).Error; err != nil {
+func (s *ProviderLogic) Delete(ctx context.Context, id int64) error {
+	if err := s.db.WithContext(ctx).Delete(&model.Provider{}, id).Error; err != nil {
 		return err
 	}
-	s.providerCache.Del(fmt.Sprintf("provider:%d", id))
-	s.invalidateRoutingCaches()
+	s.providerCache.Del(ctx, fmt.Sprintf("provider:%d", id))
+	s.invalidateRoutingCaches(ctx)
 	return nil
 }
 
 // invalidateRoutingCaches 服务商变更影响模型路由，失效所有路由相关缓存。
-func (s *ProviderLogic) invalidateRoutingCaches() {
-	s.providerCache.FlushByPrefix("provider:")
-	s.providerCache.FlushByPrefix("model_list:")
-	s.providerCache.FlushByPrefix("neg:")
-	s.providerCache.FlushByPrefix("models:")
+func (s *ProviderLogic) invalidateRoutingCaches(ctx context.Context) {
+	s.providerCache.FlushByPrefix(ctx, "provider:")
+	s.providerCache.FlushByPrefix(ctx, "model_list:")
+	s.providerCache.FlushByPrefix(ctx, "neg:")
+	s.providerCache.FlushByPrefix(ctx, "models:")
 }
 
 type UpstreamModel struct {
@@ -192,13 +193,13 @@ type upstreamModelDTO struct {
 	ID string `json:"id"`
 }
 
-func (s *ProviderLogic) fetchUpstreamModels(providerID int64) ([]upstreamModelDTO, error) {
-	provider, err := s.GetByID(providerID)
+func (s *ProviderLogic) fetchUpstreamModels(ctx context.Context, providerID int64) ([]upstreamModelDTO, error) {
+	provider, err := s.GetByID(ctx, providerID)
 	if err != nil {
 		return nil, fmt.Errorf("provider not found: %w", err)
 	}
 
-	key, err := s.decryptKey(provider.APIKey)
+	key, err := s.decryptKey(ctx, provider.APIKey)
 	if err != nil {
 		return nil, err
 	}
@@ -207,6 +208,7 @@ func (s *ProviderLogic) fetchUpstreamModels(providerID int64) ([]upstreamModelDT
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
+	req = req.WithContext(ctx)
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -232,13 +234,13 @@ func (s *ProviderLogic) fetchUpstreamModels(providerID int64) ([]upstreamModelDT
 }
 
 // getExistingModelMap 批量查询已存在的模型，返回 upstream_model_name -> bool 的映射
-func (s *ProviderLogic) getExistingModelMap(providerID int64, upstreamNames []string) (map[string]bool, error) {
+func (s *ProviderLogic) getExistingModelMap(ctx context.Context, providerID int64, upstreamNames []string) (map[string]bool, error) {
 	if len(upstreamNames) == 0 {
 		return make(map[string]bool), nil
 	}
 
 	var existing []model.ModelConfig
-	if err := s.db.Where("provider_id = ? AND upstream_model_name IN ?", providerID, upstreamNames).
+	if err := s.db.WithContext(ctx).Where("provider_id = ? AND upstream_model_name IN ?", providerID, upstreamNames).
 		Select("upstream_model_name").Find(&existing).Error; err != nil {
 		return nil, err
 	}
@@ -250,8 +252,8 @@ func (s *ProviderLogic) getExistingModelMap(providerID int64, upstreamNames []st
 	return existingMap, nil
 }
 
-func (s *ProviderLogic) PreviewModels(providerID int64) (*SyncModelsPreview, error) {
-	data, err := s.fetchUpstreamModels(providerID)
+func (s *ProviderLogic) PreviewModels(ctx context.Context, providerID int64) (*SyncModelsPreview, error) {
+	data, err := s.fetchUpstreamModels(ctx, providerID)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +263,7 @@ func (s *ProviderLogic) PreviewModels(providerID int64) (*SyncModelsPreview, err
 	for i, m := range data {
 		upstreamNames[i] = m.ID
 	}
-	existingMap, err := s.getExistingModelMap(providerID, upstreamNames)
+	existingMap, err := s.getExistingModelMap(ctx, providerID, upstreamNames)
 	if err != nil {
 		return nil, err
 	}
@@ -282,13 +284,13 @@ type SyncModelsRequest struct {
 	Models []string `json:"models"`
 }
 
-func (s *ProviderLogic) SyncModels(providerID int64, models []string) (*SyncModelsResult, error) {
-	provider, err := s.GetByID(providerID)
+func (s *ProviderLogic) SyncModels(ctx context.Context, providerID int64, models []string) (*SyncModelsResult, error) {
+	provider, err := s.GetByID(ctx, providerID)
 	if err != nil {
 		return nil, fmt.Errorf("provider not found: %w", err)
 	}
 
-	data, err := s.fetchUpstreamModels(providerID)
+	data, err := s.fetchUpstreamModels(ctx, providerID)
 	if err != nil {
 		return nil, err
 	}
@@ -298,12 +300,12 @@ func (s *ProviderLogic) SyncModels(providerID int64, models []string) (*SyncMode
 	for i, m := range data {
 		upstreamNames[i] = m.ID
 	}
-	existingMap, err := s.getExistingModelMap(providerID, upstreamNames)
+	existingMap, err := s.getExistingModelMap(ctx, providerID, upstreamNames)
 	if err != nil {
 		return nil, err
 	}
 
-	logger.Info("provider sync start", logger.Int64("provider_id", providerID), logger.Int("candidates", len(data)))
+	logger.InfoCtx(ctx, "provider sync start", logger.Int64("provider_id", providerID), logger.Int("candidates", len(data)))
 	selected := make(map[string]bool, len(models))
 	for _, m := range models {
 		selected[m] = true
@@ -311,7 +313,7 @@ func (s *ProviderLogic) SyncModels(providerID int64, models []string) (*SyncMode
 
 	result := &SyncModelsResult{Models: make([]string, 0, len(data))}
 
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, m := range data {
 			if !selected[m.ID] {
 				continue

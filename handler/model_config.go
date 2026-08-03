@@ -18,65 +18,70 @@ func NewModelHandler(svc *logic.ModelLogic) *ModelHandler {
 }
 
 func (h *ModelHandler) List(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.ModelListRequest
 	if err := httpx.MustBindQuery(w, r, &req); err != nil {
 		return
 	}
 
-	resp, err := h.svc.List(&req)
+	resp, err := h.svc.List(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, resp)
+	httpx.OkJSONCtx(ctx, w, resp)
 }
 
 func (h *ModelHandler) AllList(w http.ResponseWriter, r *http.Request) {
-	models, err := h.svc.AllList()
+	ctx := r.Context()
+	models, err := h.svc.AllList(ctx)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, models)
+	httpx.OkJSONCtx(ctx, w, models)
 }
 
 func (h *ModelHandler) Detail(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
 
-	mc, err := h.svc.GetByID(id)
+	mc, err := h.svc.GetByID(ctx, id)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, mc)
+	httpx.OkJSONCtx(ctx, w, mc)
 }
 
 func (h *ModelHandler) Create(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.ModelCreateRequest
 	if err := httpx.MustBindJSON(w, r, &req); err != nil {
 		return
 	}
 
-	mc, err := h.svc.Create(&req)
+	mc, err := h.svc.Create(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, mc)
+	httpx.OkJSONCtx(ctx, w, mc)
 }
 
 func (h *ModelHandler) Update(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
 
@@ -86,26 +91,27 @@ func (h *ModelHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	req.ID = id
 
-	mc, err := h.svc.Update(&req)
+	mc, err := h.svc.Update(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, mc)
+	httpx.OkJSONCtx(ctx, w, mc)
 }
 
 func (h *ModelHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
 
-	if err := h.svc.Delete(id); err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+	if err := h.svc.Delete(ctx, id); err != nil {
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, nil)
+	httpx.OkJSONCtx(ctx, w, nil)
 }

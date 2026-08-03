@@ -1,6 +1,8 @@
 package logic
 
 import (
+	"context"
+
 	"chihqiang/llm-gate/cache"
 	"chihqiang/llm-gate/model"
 
@@ -28,11 +30,11 @@ type ModelListResponse struct {
 	Total int64               `json:"total"`
 }
 
-func (s *ModelLogic) List(req *ModelListRequest) (*ModelListResponse, error) {
+func (s *ModelLogic) List(ctx context.Context, req *ModelListRequest) (*ModelListResponse, error) {
 	var models []model.ModelConfig
 	var total int64
 
-	query := s.db.Model(&model.ModelConfig{})
+	query := s.db.WithContext(ctx).Model(&model.ModelConfig{})
 	if req.Name != "" {
 		query = query.Where("name LIKE ?", "%"+req.Name+"%")
 	}
@@ -52,23 +54,23 @@ func (s *ModelLogic) List(req *ModelListRequest) (*ModelListResponse, error) {
 	return &ModelListResponse{Data: models, Total: total}, nil
 }
 
-func (s *ModelLogic) AllList() ([]model.ModelConfig, error) {
+func (s *ModelLogic) AllList(ctx context.Context) ([]model.ModelConfig, error) {
 	var models []model.ModelConfig
-	err := s.db.Where("status = ?", true).Find(&models).Error
+	err := s.db.WithContext(ctx).Where("status = ?", true).Find(&models).Error
 	return models, err
 }
 
-func (s *ModelLogic) GetByID(id int64) (*model.ModelConfig, error) {
+func (s *ModelLogic) GetByID(ctx context.Context, id int64) (*model.ModelConfig, error) {
 	var mc model.ModelConfig
-	if err := s.db.First(&mc, id).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&mc, id).Error; err != nil {
 		return nil, err
 	}
 	return &mc, nil
 }
 
-func (s *ModelLogic) GetByName(name string) (*model.ModelConfig, error) {
+func (s *ModelLogic) GetByName(ctx context.Context, name string) (*model.ModelConfig, error) {
 	var mc model.ModelConfig
-	if err := s.db.Where("name = ? AND status = ?", name, true).First(&mc).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("name = ? AND status = ?", name, true).First(&mc).Error; err != nil {
 		return nil, err
 	}
 	return &mc, nil
@@ -85,7 +87,7 @@ type ModelCreateRequest struct {
 	Remark            string  `json:"remark"`
 }
 
-func (s *ModelLogic) Create(req *ModelCreateRequest) (*model.ModelConfig, error) {
+func (s *ModelLogic) Create(ctx context.Context, req *ModelCreateRequest) (*model.ModelConfig, error) {
 	mc := model.ModelConfig{
 		Name:              req.Name,
 		ProviderID:        req.ProviderID,
@@ -105,10 +107,10 @@ func (s *ModelLogic) Create(req *ModelCreateRequest) (*model.ModelConfig, error)
 	if mc.Weight == 0 {
 		mc.Weight = 1
 	}
-	if err := s.db.Create(&mc).Error; err != nil {
+	if err := s.db.WithContext(ctx).Create(&mc).Error; err != nil {
 		return nil, err
 	}
-	s.invalidateModelCaches()
+	s.invalidateModelCaches(ctx)
 	return &mc, nil
 }
 
@@ -124,7 +126,7 @@ type ModelUpdateRequest struct {
 	Remark            string  `json:"remark"`
 }
 
-func (s *ModelLogic) Update(req *ModelUpdateRequest) (*model.ModelConfig, error) {
+func (s *ModelLogic) Update(ctx context.Context, req *ModelUpdateRequest) (*model.ModelConfig, error) {
 	updates := map[string]interface{}{
 		"name":                req.Name,
 		"provider_id":         req.ProviderID,
@@ -135,31 +137,31 @@ func (s *ModelLogic) Update(req *ModelUpdateRequest) (*model.ModelConfig, error)
 		"status":              req.Status,
 		"remark":              req.Remark,
 	}
-	if err := s.db.Model(&model.ModelConfig{}).Where("id = ?", req.ID).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&model.ModelConfig{}).Where("id = ?", req.ID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	s.invalidateModelCaches()
-	return s.GetByID(req.ID)
+	s.invalidateModelCaches(ctx)
+	return s.GetByID(ctx, req.ID)
 }
 
-func (s *ModelLogic) Delete(id int64) error {
+func (s *ModelLogic) Delete(ctx context.Context, id int64) error {
 	var mc model.ModelConfig
-	if err := s.db.Select("name").First(&mc, id).Error; err != nil {
+	if err := s.db.WithContext(ctx).Select("name").First(&mc, id).Error; err != nil {
 		// 记录不存在也视为成功，保证幂等
 		if err != gorm.ErrRecordNotFound {
 			return err
 		}
 	}
-	if err := s.db.Delete(&model.ModelConfig{}, id).Error; err != nil {
+	if err := s.db.WithContext(ctx).Delete(&model.ModelConfig{}, id).Error; err != nil {
 		return err
 	}
-	s.invalidateModelCaches()
+	s.invalidateModelCaches(ctx)
 	return nil
 }
 
 // invalidateModelCaches 模型配置变更影响路由与模型列表，失效所有相关缓存。
-func (s *ModelLogic) invalidateModelCaches() {
-	s.modelListCache.FlushByPrefix("model_list:")
-	s.modelListCache.FlushByPrefix("neg:")
-	s.modelListCache.FlushByPrefix("models:")
+func (s *ModelLogic) invalidateModelCaches(ctx context.Context) {
+	s.modelListCache.FlushByPrefix(ctx, "model_list:")
+	s.modelListCache.FlushByPrefix(ctx, "neg:")
+	s.modelListCache.FlushByPrefix(ctx, "models:")
 }

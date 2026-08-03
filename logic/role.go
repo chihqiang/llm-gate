@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"context"
 	"errors"
 
 	"chihqiang/llm-gate/model"
@@ -29,11 +30,11 @@ type RoleListResponse struct {
 	Total int64        `json:"total"`
 }
 
-func (s *RoleLogic) List(req *RoleListRequest) (*RoleListResponse, error) {
+func (s *RoleLogic) List(ctx context.Context, req *RoleListRequest) (*RoleListResponse, error) {
 	var roles []model.Role
 	var total int64
 
-	query := s.db.Model(&model.Role{})
+	query := s.db.WithContext(ctx).Model(&model.Role{})
 	if req.ID > 0 {
 		query = query.Where("id = ?", req.ID)
 	}
@@ -50,15 +51,15 @@ func (s *RoleLogic) List(req *RoleListRequest) (*RoleListResponse, error) {
 	return &RoleListResponse{Data: roles, Total: total}, nil
 }
 
-func (s *RoleLogic) AllList() ([]model.Role, error) {
+func (s *RoleLogic) AllList(ctx context.Context) ([]model.Role, error) {
 	var roles []model.Role
-	err := s.db.Order("sort ASC").Find(&roles).Error
+	err := s.db.WithContext(ctx).Order("sort ASC").Find(&roles).Error
 	return roles, err
 }
 
-func (s *RoleLogic) GetByID(id int64) (*model.Role, error) {
+func (s *RoleLogic) GetByID(ctx context.Context, id int64) (*model.Role, error) {
 	var role model.Role
-	if err := s.db.Preload("Menus").First(&role, id).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Menus").First(&role, id).Error; err != nil {
 		return nil, err
 	}
 	return &role, nil
@@ -71,14 +72,14 @@ type RoleCreateRequest struct {
 	Remark string `json:"remark"`
 }
 
-func (s *RoleLogic) Create(req *RoleCreateRequest) (*model.Role, error) {
+func (s *RoleLogic) Create(ctx context.Context, req *RoleCreateRequest) (*model.Role, error) {
 	role := model.Role{
 		Name:   req.Name,
 		Sort:   req.Sort,
 		Status: req.Status,
 		Remark: req.Remark,
 	}
-	if err := s.db.Create(&role).Error; err != nil {
+	if err := s.db.WithContext(ctx).Create(&role).Error; err != nil {
 		return nil, err
 	}
 	return &role, nil
@@ -92,9 +93,9 @@ type RoleUpdateRequest struct {
 	Remark string `json:"remark"`
 }
 
-func (s *RoleLogic) Update(req *RoleUpdateRequest) (*model.Role, error) {
+func (s *RoleLogic) Update(ctx context.Context, req *RoleUpdateRequest) (*model.Role, error) {
 	// 使用 map + Updates 而非 Save，避免零值字段（如 CreatedAt）被覆盖
-	if err := s.db.Model(&model.Role{}).Where("id = ?", req.ID).Updates(map[string]interface{}{
+	if err := s.db.WithContext(ctx).Model(&model.Role{}).Where("id = ?", req.ID).Updates(map[string]interface{}{
 		"name":   req.Name,
 		"sort":   req.Sort,
 		"status": req.Status,
@@ -111,13 +112,13 @@ func (s *RoleLogic) Update(req *RoleUpdateRequest) (*model.Role, error) {
 	}, nil
 }
 
-func (s *RoleLogic) Delete(id int64) error {
+func (s *RoleLogic) Delete(ctx context.Context, id int64) error {
 	if s.adminRoleID > 0 && id == s.adminRoleID {
-		logger.Warn("role delete forbidden: admin role", logger.Int64("admin_role_id", s.adminRoleID))
+		logger.WarnCtx(ctx, "role delete forbidden: admin role", logger.Int64("admin_role_id", s.adminRoleID))
 		return errors.New("不能删除超级管理员角色")
 	}
 
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var role model.Role
 		if err := tx.First(&role, id).Error; err != nil {
 			return err
@@ -133,13 +134,13 @@ type RoleMenuRequest struct {
 	MenuIDs []int64 `json:"menu_ids" binding:"required"`
 }
 
-func (s *RoleLogic) AssociateMenus(roleID int64, menuIDs []int64) error {
+func (s *RoleLogic) AssociateMenus(ctx context.Context, roleID int64, menuIDs []int64) error {
 	if s.adminRoleID > 0 && roleID == s.adminRoleID {
-		logger.Warn("role associate menus forbidden: admin role", logger.Int64("admin_role_id", s.adminRoleID))
+		logger.WarnCtx(ctx, "role associate menus forbidden: admin role", logger.Int64("admin_role_id", s.adminRoleID))
 		return errors.New("不能修改超级管理员角色的菜单权限")
 	}
 
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var role model.Role
 		if err := tx.First(&role, roleID).Error; err != nil {
 			return err

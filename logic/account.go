@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"context"
 	"fmt"
 
 	"chihqiang/llm-gate/cache"
@@ -31,11 +32,11 @@ type AccountListResponse struct {
 	Total int64           `json:"total"`
 }
 
-func (s *AccountLogic) List(req *AccountListRequest) (*AccountListResponse, error) {
+func (s *AccountLogic) List(ctx context.Context, req *AccountListRequest) (*AccountListResponse, error) {
 	var accounts []model.Account
 	var total int64
 
-	query := s.db.Model(&model.Account{})
+	query := s.db.WithContext(ctx).Model(&model.Account{})
 	if req.CurrentAccountID > 0 {
 		query = query.Where("id = ?", req.CurrentAccountID)
 	} else if req.ID > 0 {
@@ -54,9 +55,9 @@ func (s *AccountLogic) List(req *AccountListRequest) (*AccountListResponse, erro
 	return &AccountListResponse{Data: accounts, Total: total}, nil
 }
 
-func (s *AccountLogic) GetByID(id int64) (*model.Account, error) {
+func (s *AccountLogic) GetByID(ctx context.Context, id int64) (*model.Account, error) {
 	var account model.Account
-	if err := s.db.Preload("Roles").First(&account, id).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Roles").First(&account, id).Error; err != nil {
 		return nil, err
 	}
 	return &account, nil
@@ -74,7 +75,7 @@ type RoleRef struct {
 	ID int64 `json:"id"`
 }
 
-func (s *AccountLogic) Create(req *AccountCreateRequest) (*model.Account, error) {
+func (s *AccountLogic) Create(ctx context.Context, req *AccountCreateRequest) (*model.Account, error) {
 	hashed, err := hash.BcryptHashDefault(req.Password)
 	if err != nil {
 		return nil, err
@@ -87,7 +88,7 @@ func (s *AccountLogic) Create(req *AccountCreateRequest) (*model.Account, error)
 		Status:   req.Status,
 	}
 
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&account).Error; err != nil {
 			return err
 		}
@@ -109,7 +110,7 @@ func (s *AccountLogic) Create(req *AccountCreateRequest) (*model.Account, error)
 		return nil, err
 	}
 
-	return s.GetByID(account.ID)
+	return s.GetByID(ctx, account.ID)
 }
 
 type AccountUpdateRequest struct {
@@ -121,9 +122,9 @@ type AccountUpdateRequest struct {
 	Roles    []RoleRef `json:"roles"`
 }
 
-func (s *AccountLogic) Update(req *AccountUpdateRequest) (*model.Account, error) {
+func (s *AccountLogic) Update(ctx context.Context, req *AccountUpdateRequest) (*model.Account, error) {
 	var account model.Account
-	if err := s.db.First(&account, req.ID).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&account, req.ID).Error; err != nil {
 		return nil, err
 	}
 
@@ -141,8 +142,8 @@ func (s *AccountLogic) Update(req *AccountUpdateRequest) (*model.Account, error)
 		updates["password"] = hashed
 	}
 
-	s.accountCache.Del(fmt.Sprintf("account:%d", req.ID))
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	s.accountCache.Del(ctx, fmt.Sprintf("account:%d", req.ID))
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&account).Updates(updates).Error; err != nil {
 			return err
 		}
@@ -164,11 +165,11 @@ func (s *AccountLogic) Update(req *AccountUpdateRequest) (*model.Account, error)
 		return nil, err
 	}
 
-	return s.GetByID(account.ID)
+	return s.GetByID(ctx, account.ID)
 }
 
-func (s *AccountLogic) Delete(id int64) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
+func (s *AccountLogic) Delete(ctx context.Context, id int64) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("account_id = ?", id).Delete(&model.AccountRole{}).Error; err != nil {
 			return err
 		}

@@ -49,9 +49,9 @@ func (c *RetentionCleaner) clean(ctx context.Context) {
 		cutoff := now.AddDate(0, 0, -c.cfg.UsageDays)
 		res := c.db.WithContext(ctx).Where("created_at < ?", cutoff).Delete(&model.UsageLog{})
 		if res.Error != nil {
-			logger.GetGlobal().Errorf("清理用量日志失败: %v", res.Error)
+			logger.ErrorCtx(ctx, "清理用量日志失败", logger.Err(res.Error))
 		} else if res.RowsAffected > 0 {
-			logger.GetGlobal().Infof("清理过期用量日志 %d 条", res.RowsAffected)
+			logger.InfoCtx(ctx, "清理过期用量日志", logger.Int64("rows", res.RowsAffected))
 		}
 	}
 
@@ -59,9 +59,9 @@ func (c *RetentionCleaner) clean(ctx context.Context) {
 		cutoff := now.AddDate(0, 0, -c.cfg.TransactionDays)
 		res := c.db.WithContext(ctx).Where("created_at < ?", cutoff).Delete(&model.Transaction{})
 		if res.Error != nil {
-			logger.GetGlobal().Errorf("清理余额流水失败: %v", res.Error)
+			logger.ErrorCtx(ctx, "清理余额流水失败", logger.Err(res.Error))
 		} else if res.RowsAffected > 0 {
-			logger.GetGlobal().Infof("清理过期余额流水 %d 条", res.RowsAffected)
+			logger.InfoCtx(ctx, "清理过期余额流水", logger.Int64("rows", res.RowsAffected))
 		}
 	}
 
@@ -70,9 +70,9 @@ func (c *RetentionCleaner) clean(ctx context.Context) {
 		cutoff := now.AddDate(0, 0, -c.cfg.ExpiredTokenGraceDays)
 		res := c.db.WithContext(ctx).Where("expired_at IS NOT NULL AND expired_at < ?", cutoff).Delete(&model.UserToken{})
 		if res.Error != nil {
-			logger.GetGlobal().Errorf("清理过期 Token 失败: %v", res.Error)
+			logger.ErrorCtx(ctx, "清理过期 Token 失败", logger.Err(res.Error))
 		} else if res.RowsAffected > 0 {
-			logger.GetGlobal().Infof("清理过期 Token %d 条", res.RowsAffected)
+			logger.InfoCtx(ctx, "清理过期 Token", logger.Int64("rows", res.RowsAffected))
 		}
 	}
 }

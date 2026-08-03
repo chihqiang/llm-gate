@@ -18,16 +18,17 @@ func NewDashboardHandler(svc *logic.DashboardLogic) *DashboardHandler {
 }
 
 func (h *DashboardHandler) Stats(w http.ResponseWriter, r *http.Request) {
-	account := middleware.AccountFromContext(r.Context())
+	ctx := r.Context()
+	account := middleware.AccountFromContext(ctx)
 	var accountID int64
-	if account != nil && !middleware.IsAdmin(r.Context()) {
+	if account != nil && !middleware.IsAdmin(ctx) {
 		accountID = account.ID
 	}
 
-	stats, err := h.svc.GetStats(accountID)
+	stats, err := h.svc.GetStats(ctx, accountID)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
-	httpx.OkJSON(w, stats)
+	httpx.OkJSONCtx(ctx, w, stats)
 }

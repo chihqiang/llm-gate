@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"context"
 	"time"
 
 	"gorm.io/gorm"
@@ -26,7 +27,7 @@ func NewDashboardLogic(db *gorm.DB) *DashboardLogic {
 	return &DashboardLogic{db: db}
 }
 
-func (s *DashboardLogic) GetStats(accountID int64) (*DashboardStats, error) {
+func (s *DashboardLogic) GetStats(ctx context.Context, accountID int64) (*DashboardStats, error) {
 	stats := &DashboardStats{}
 	todayStart := time.Now().Truncate(24 * time.Hour)
 	now := time.Now()
@@ -65,7 +66,7 @@ func (s *DashboardLogic) GetStats(accountID int64) (*DashboardStats, error) {
 		(SELECT COUNT(*) FROM llm_providers) AS total_providers,
 		(SELECT COUNT(*) FROM llm_models) AS total_models`
 
-	if err := s.db.Raw(sql, args...).Scan(stats).Error; err != nil {
+	if err := s.db.WithContext(ctx).Raw(sql, args...).Scan(stats).Error; err != nil {
 		return nil, err
 	}
 	return stats, nil

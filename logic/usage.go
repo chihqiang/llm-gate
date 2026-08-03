@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"context"
 	"time"
 
 	"chihqiang/llm-gate/model"
@@ -37,11 +38,11 @@ type UsageListResponse struct {
 	Total int64        `json:"total"`
 }
 
-func (s *UsageLogic) List(req *UsageListRequest) (*UsageListResponse, error) {
+func (s *UsageLogic) List(ctx context.Context, req *UsageListRequest) (*UsageListResponse, error) {
 	var logs []UsageLogVO
 	var total int64
 
-	query := s.db.Model(&model.UsageLog{}).
+	query := s.db.WithContext(ctx).Model(&model.UsageLog{}).
 		Select("llm_usage_logs.*, COALESCE(sa.name, '') as account_name, COALESCE(lt.name, '') as token_name").
 		Joins("LEFT JOIN sys_accounts sa ON sa.id = llm_usage_logs.account_id").
 		Joins("LEFT JOIN llm_user_tokens lt ON lt.id = llm_usage_logs.token_id")
@@ -83,8 +84,8 @@ type UsageStat struct {
 	RequestCount   int64  `json:"request_count"`
 }
 
-func (s *UsageLogic) GetStats(accountID int64, startDate, endDate string) ([]UsageStat, error) {
-	query := s.db.Model(&model.UsageLog{}).
+func (s *UsageLogic) GetStats(ctx context.Context, accountID int64, startDate, endDate string) ([]UsageStat, error) {
+	query := s.db.WithContext(ctx).Model(&model.UsageLog{}).
 		Select("model_name, SUM(total_tokens) as total_tokens, SUM(quota_cost) as total_quota_cost, SUM(cost_cents) as total_cost_cents, COUNT(*) as request_count").
 		Group("model_name")
 

@@ -8,13 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/chihqiang/infra-go/logger"
-	"github.com/chihqiang/infra-go/retry"
+	"github.com/chihqiang/infra-go/trace"
 )
 
 const (
@@ -72,68 +73,80 @@ func (e *committedError) Error() string { return "response committed: " + e.err.
 
 // forward 按候选顺序尝试上游，支持熔断跳过与自动降级。
 // 仅在所有候选都失败或遇到不可重试错误时，才向客户端写入错误响应。
-// 返回 usage（可能为 nil）、是否成功投递响应、错误。
-func (h *RelayHandler) forward(w http.ResponseWriter, r *http.Request, kind string,
-	candidates []upstreamCandidate, raw map[string]json.RawMessage, isStream bool, requestID string) (*usageData, bool, error) {
+// 返回 usage（可能为 nil）、是否成功投递响应、错误，以及实际生效的候选（失败时可能为 nil）。
+func (h *RelayHandler) forward(ctx context.Context, w http.ResponseWriter, r *http.Request, kind string,
+	candidates []upstreamCandidate, raw map[string]json.RawMessage, isStream bool, requestID string) (*usageData, bool, error, *upstreamCandidate) {
 
 	var lastErr error
-	for i, cand := range candidates {
+	for i := range candidates {
+		cand := &candidates[i]
 		breaker := h.breakers.get(cand.Provider.ID)
 		if !breaker.Allow() {
 			lastErr = &upstreamError{status: http.StatusServiceUnavailable,
 				msg: fmt.Sprintf("provider %s circuit open", cand.Provider.Name)}
-			logger.Warn("relay: circuit open, skip provider",
+			logger.WarnCtx(ctx, "relay: circuit open, skip provider",
 				logger.Int64("provider_id", cand.Provider.ID), logger.String("request_id", requestID))
-			h.notifier.Send(fmt.Sprintf("circuit_open_%d", cand.Provider.ID), "上游熔断打开",
+			h.notifier.Send(ctx, fmt.Sprintf("circuit_open_%d", cand.Provider.ID), "上游熔断打开",
 				fmt.Sprintf("服务商 %s 连续失败被熔断，请求自动跳过", cand.Provider.Name))
 			continue
 		}
 
 		reqBody := buildRequestBody(raw, cand.Model.UpstreamModelName, isStream)
-		usage, delivered, err := h.attempt(w, r, kind, cand, reqBody, isStream)
+		usage, delivered, err := h.attempt(ctx, w, r, kind, *cand, reqBody, isStream)
 		if err != nil {
 			breaker.Failure()
-			logger.Warn("relay: upstream attempt failed",
+			logger.WarnCtx(ctx, "relay: upstream attempt failed",
 				logger.Err(err), logger.Int64("provider_id", cand.Provider.ID), logger.String("request_id", requestID))
-			h.notifier.Send(fmt.Sprintf("provider_fail_%d", cand.Provider.ID), "上游故障",
+			h.notifier.Send(ctx, fmt.Sprintf("provider_fail_%d", cand.Provider.ID), "上游故障",
 				fmt.Sprintf("服务商 %s 请求失败：%v", cand.Provider.Name, err))
 			lastErr = err
-			ue, ok := err.(*upstreamError)
-			// 已提交响应（流式中断）：不能再次写入错误响应，仅停止降级尝试
-			if _, committed := err.(*committedError); committed {
-				return usage, delivered, err
+			// 已提交响应（流式中断）：不能再次写入错误响应，仅停止降级尝试。
+			// 该候选已实际生效，返回给上层用于结算/用量记录。
+			var committed *committedError
+			if errors.As(err, &committed) {
+				return usage, delivered, err, cand
 			}
+			var ue *upstreamError
+			// 重试器会用 ErrMaxRetries 包装底层错误，需 errors.As 解包
+			ok := errors.As(err, &ue)
 			// 不可重试错误（4xx）或已无更多候选：写入最终错误
 			if !ok || !ue.retryable() || i == len(candidates)-1 {
 				writeFinalError(w, err)
-				return nil, false, err
+				return nil, false, err, nil
 			}
 			continue
 		}
 		breaker.Success()
-		logger.Info("relay upstream ok",
+		logger.InfoCtx(ctx, "relay upstream ok",
 			logger.String("provider", cand.Provider.Name),
 			logger.String("request_id", requestID))
-		return usage, delivered, nil
+		return usage, delivered, nil, cand
 	}
 
 	writeFinalError(w, lastErr)
-	return nil, false, lastErr
+	return nil, false, lastErr, nil
 }
 
 // attempt 执行单次上游请求（含非流式重试）。
 // 流式请求使用独立于客户端连接的超时上下文：客户端断连后仍继续读取上游以获取 usage，确保计费准确。
-func (h *RelayHandler) attempt(w http.ResponseWriter, r *http.Request, kind string,
+func (h *RelayHandler) attempt(ctx context.Context, w http.ResponseWriter, r *http.Request, kind string,
 	cand upstreamCandidate, body []byte, isStream bool) (*usageData, bool, error) {
 
-	// 流式：解耦客户端断连；非流式：客户端取消则中止
-	var ctx context.Context
-	var cancel context.CancelFunc
+	ctx, span := trace.StartSpan(ctx, "upstream "+endpointPath(kind),
+		trace.WithAttributes(
+			trace.AttrString("provider", cand.Provider.Name),
+			trace.AttrInt64("provider_id", cand.Provider.ID),
+			trace.AttrString("upstream_model", cand.Model.UpstreamModelName),
+		),
+	)
+	defer span.End()
+
+	// 流式：解耦客户端断连，但保留链路上下文；非流式：客户端取消则中止
 	if isStream {
-		ctx, cancel = context.WithTimeout(context.Background(), time.Duration(h.relayCfg.Timeout)*time.Second)
+		detached := context.WithoutCancel(ctx)
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(detached, time.Duration(h.relayCfg.Timeout)*time.Second)
 		defer cancel()
-	} else {
-		ctx = r.Context()
 	}
 
 	run := func() (*upstreamResult, error) {
@@ -145,19 +158,25 @@ func (h *RelayHandler) attempt(w http.ResponseWriter, r *http.Request, kind stri
 	if isStream {
 		last, err = run()
 	} else if h.relayCfg.Upstream.RetryEnabled {
-		err = retry.DoWithConfig(ctx, func(ctx context.Context) error {
-			var uErr error
-			last, uErr = h.doForward(ctx, kind, cand, body)
-			return uErr
-		},
-			retry.WithMaxRetries(h.relayCfg.Upstream.MaxRetries),
-			retry.WithDelay(time.Duration(h.relayCfg.Upstream.RetryDelayMs)*time.Millisecond),
-			retry.WithJitter(),
-			retry.WithRetryIf(func(err error) bool {
-				ue, ok := err.(*upstreamError)
-				return ok && ue.retryable()
-			}),
-		)
+		// 内联重试：retry 包会把底层错误用 %s 序列化，导致 errors.As 无法解包 upstreamError，
+		// 进而阻断多服务商降级，故在此内联实现并保留原始错误类型。
+		maxRetries := h.relayCfg.Upstream.MaxRetries
+		if maxRetries < 0 {
+			maxRetries = 0
+		}
+		delay := time.Duration(h.relayCfg.Upstream.RetryDelayMs) * time.Millisecond
+		for attempt := 0; ; attempt++ {
+			last, err = run()
+			var ue *upstreamError
+			if err == nil || !errors.As(err, &ue) || !ue.retryable() || attempt >= maxRetries {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				err = ctx.Err()
+			case <-time.After(delay + time.Duration(rand.Int64N(int64(delay)+1))):
+			}
+		}
 	} else {
 		last, err = run()
 	}
@@ -168,7 +187,7 @@ func (h *RelayHandler) attempt(w http.ResponseWriter, r *http.Request, kind stri
 	writeHeaders(w, last.header, last.status)
 
 	if last.isStream {
-		usage, delivered, serr := proxyStreamWithUsage(w, r.Context(), last.stream)
+		usage, delivered, serr := proxyStreamWithUsage(w, ctx, last.stream)
 		if serr != nil {
 			// 响应头已写入，客户端可能已收到部分内容：标记为已提交错误，仅影响熔断统计与结算
 			return usage, delivered, &committedError{err: serr}
@@ -177,7 +196,7 @@ func (h *RelayHandler) attempt(w http.ResponseWriter, r *http.Request, kind stri
 	}
 
 	if _, werr := w.Write(last.body); werr != nil {
-		logger.Error("relay: write response body failed", logger.Err(werr))
+		logger.ErrorCtx(ctx, "relay: write response body failed", logger.Err(werr))
 	}
 	return extractUsage(last.body), true, nil
 }
@@ -192,6 +211,8 @@ func (h *RelayHandler) doForward(ctx context.Context, kind string, cand upstream
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+cand.Provider.APIKey)
+	// 注入 W3C trace context，使上游（若接入）与当前请求共享同一链路
+	trace.InjectHeader(ctx, req.Header)
 
 	resp, err := h.client.Do(req)
 	if err != nil {
@@ -295,7 +316,7 @@ func proxyStreamWithUsage(w http.ResponseWriter, ctx context.Context, upstreamBo
 
 	// 上游读取失败（非 EOF）视为流中断，用于熔断统计
 	if err := scanner.Err(); err != nil {
-		logger.Error("relay stream: scanner error, usage may be incomplete", logger.Err(err))
+		logger.ErrorCtx(ctx, "relay stream: scanner error, usage may be incomplete", logger.Err(err))
 		return usage, delivered, err
 	}
 
@@ -365,7 +386,8 @@ func writeFinalError(w http.ResponseWriter, err error) {
 	if err == nil {
 		err = errors.New("all upstreams unavailable")
 	}
-	if ue, ok := err.(*upstreamError); ok {
+	var ue *upstreamError
+	if errors.As(err, &ue) {
 		status := http.StatusBadGateway
 		if ue.status > 0 {
 			status = ue.status

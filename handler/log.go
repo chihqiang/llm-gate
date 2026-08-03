@@ -18,21 +18,22 @@ func NewLogHandler(svc *logic.LogLogic) *LogHandler {
 }
 
 func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.LogListRequest
 	if err := httpx.MustBindQuery(w, r, &req); err != nil {
 		return
 	}
 
-	account := middleware.AccountFromContext(r.Context())
-	if account != nil && !middleware.IsAdmin(r.Context()) {
+	account := middleware.AccountFromContext(ctx)
+	if account != nil && !middleware.IsAdmin(ctx) {
 		req.CurrentAccountID = account.ID
 	}
 
-	resp, err := h.svc.List(&req)
+	resp, err := h.svc.List(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		httpx.OkJSONCtx(ctx, w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, resp)
+	httpx.OkJSONCtx(ctx, w, resp)
 }

@@ -36,12 +36,12 @@ func Permission(skipRoutes ...string) httpx.Middleware {
 
 			ps := PermissionSetFromContext(r.Context())
 			if ps == nil || !ps.Check(r.Method, uri) {
-				logger.Warn("permission denied",
+				logger.WarnCtx(r.Context(), "permission denied",
 					logger.Int64("account_id", account.ID),
 					logger.String("method", r.Method),
 					logger.String("uri", uri),
 				)
-				httpx.WriteHTTPError(w, httpx.CodeForbidden, "无权限访问")
+				httpx.WriteHTTPErrorCtx(r.Context(), w, httpx.CodeForbidden, "无权限访问")
 				return
 			}
 

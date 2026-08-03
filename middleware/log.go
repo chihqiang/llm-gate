@@ -106,7 +106,7 @@ func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) ht
 				var readErr error
 				reqBody, readErr = io.ReadAll(limitedBody)
 				if readErr != nil {
-					logger.Warn("log: read request body failed", logger.Err(readErr))
+					logger.WarnCtx(r.Context(), "log: read request body failed", logger.Err(readErr))
 				}
 				if len(reqBody) > maxReqBodySize {
 					reqBody = reqBody[:maxReqBodySize]
@@ -140,6 +140,8 @@ func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) ht
 			respStatus := rw.status
 			respBody := rw.body.String()
 			reqPayload := sanitizePayload(string(reqBody))
+			// 在请求期间捕获 context，供后台 worker 记录链路信息（读取 value 安全，不用于 DB）
+			traceCtx := r.Context()
 
 			logWorker.Submit(func() {
 				if err := logLogic.Create(&model.Log{
@@ -155,7 +157,7 @@ func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) ht
 					AccountID:      accountID,
 					AccountName:    accountName,
 				}); err != nil {
-					logger.Error("create log failed", logger.Err(err))
+					logger.ErrorCtx(traceCtx, "create log failed", logger.Err(err))
 				}
 			})
 		}
