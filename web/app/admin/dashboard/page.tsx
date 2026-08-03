@@ -39,6 +39,12 @@ const usageSearchFields: SearchField[] = [
     placeholder: "搜索模型",
   },
   {
+    name: "request_id",
+    label: "请求ID",
+    type: "input",
+    placeholder: "请求ID",
+  },
+  {
     name: "start_date",
     label: "开始日期",
     type: "input",
@@ -73,6 +79,15 @@ const usageColumns: DataListColumn<UsageLog>[] = [
     key: "model_name",
     header: "模型",
     cell: (row) => row.model_name,
+  },
+  {
+    key: "request_id",
+    header: "请求ID",
+    cell: (row) => (
+      <span className="font-mono text-xs text-muted-foreground">
+        {row.request_id || "-"}
+      </span>
+    ),
   },
   {
     key: "prompt_tokens",

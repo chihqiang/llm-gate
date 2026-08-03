@@ -22,6 +22,7 @@ type UsageListRequest struct {
 	Size             int    `form:"size" binding:"required,min=1,max=1000"`
 	AccountID        int64  `form:"account_id"`
 	ModelName        string `form:"model_name"`
+	RequestID        string `form:"request_id"`
 	StartDate        string `form:"start_date"`
 	EndDate          string `form:"end_date"`
 	CurrentAccountID int64  `form:"-"`
@@ -53,6 +54,9 @@ func (s *UsageLogic) List(ctx context.Context, req *UsageListRequest) (*UsageLis
 	}
 	if req.ModelName != "" {
 		query = query.Where("llm_usage_logs.model_name = ?", req.ModelName)
+	}
+	if req.RequestID != "" {
+		query = query.Where("llm_usage_logs.request_id = ?", req.RequestID)
 	}
 	if req.StartDate != "" {
 		if t, err := time.Parse("2006-01-02", req.StartDate); err == nil {

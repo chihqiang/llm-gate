@@ -118,6 +118,19 @@ func (h *RelayHandler) settleWorker() {
 // processJob 执行单个结算任务：多退少补 + 写流水 + 累计 Token 消费 + 用量日志。
 // 资金变动与流水写入在同一事务中，保证账目一致。
 func (h *RelayHandler) processJob(job settleJob) {
+	_, span := trace.StartSpan(job.ctx, "relay settle",
+		trace.WithAttributes(
+			trace.AttrString("request_id", job.requestID),
+			trace.AttrInt64("account_id", job.accountID),
+			trace.AttrInt64("token_id", job.tokenID),
+			trace.AttrString("model", job.modelName),
+			trace.AttrInt64("pre_consume_cents", job.preConsumeCents),
+			trace.AttrInt64("actual_cents", job.actualCents),
+			trace.AttrBool("estimated", job.estimated),
+		),
+	)
+	defer span.End()
+
 	err := h.db.WithContext(job.ctx).Transaction(func(tx *gorm.DB) error {
 		if job.actualCents <= 0 {
 			// 无实际费用：退还预扣并释放预占额度
@@ -358,7 +371,7 @@ func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string
 		refundWithRetry(ctx, h.db, authResult.Account.ID, preConsumeCents)
 		_ = AdjustTokenSpentTx(h.db.WithContext(ctx), authResult.Token.ID, -reserveQuotaCents)
 		h.appendBalanceTxn(settleJob{
-			ctx:             httpx.ContextWithRequestID(trace.ContextWithSpanContext(context.Background(), trace.SpanContextFromContext(ctx)), requestID),
+			ctx:             context.WithoutCancel(ctx),
 			accountID:       authResult.Account.ID,
 			tokenID:         authResult.Token.ID,
 			requestID:       requestID,
@@ -404,9 +417,9 @@ func (h *RelayHandler) finalizeAndSettle(ctx context.Context, authResult *AuthRe
 	}
 
 	// 结算在请求结束后由 worker 异步执行，请求 ctx 已被服务端取消。
-	// 仅保留链路上下文与 request_id，避免使用已取消的 ctx 导致事务中止。
-	jobCtx := trace.ContextWithSpanContext(context.Background(), trace.SpanContextFromContext(ctx))
-	jobCtx = httpx.ContextWithRequestID(jobCtx, requestID)
+	// WithoutCancel 保留真实 recording span（父链路）与 request_id 等值，
+	// 同时脱离取消信号避免事务中止；SpanContextWithContext 包装会退化为 noop tracer 导致子 span 丢失。
+	jobCtx := context.WithoutCancel(ctx)
 
 	job := settleJob{
 		ctx:                    jobCtx,

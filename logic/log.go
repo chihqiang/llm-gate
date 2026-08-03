@@ -64,6 +64,6 @@ func (s *LogLogic) List(ctx context.Context, req *LogListRequest) (*LogListRespo
 	return &LogListResponse{Data: logs, Total: total}, nil
 }
 
-func (s *LogLogic) Create(log *model.Log) error {
-	return s.db.Create(log).Error
+func (s *LogLogic) Create(ctx context.Context, log *model.Log) error {
+	return s.db.WithContext(ctx).Create(log).Error
 }

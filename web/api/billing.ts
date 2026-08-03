@@ -71,6 +71,7 @@ export interface BalanceTransaction {
 export interface TransactionListRequest extends PageRequest {
   account_id?: number
   type?: TransactionType
+  request_id?: string
 }
 
 export interface TransactionListResponse

@@ -231,6 +231,7 @@ export interface UsageStat {
 export interface UsageListRequest extends PageRequest {
   account_id?: number
   model_name?: string
+  request_id?: string
   start_date?: string
   end_date?: string
 }

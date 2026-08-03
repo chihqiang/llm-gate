@@ -33,6 +33,12 @@ const searchFields: SearchField[] = [
     placeholder: "账号ID",
   },
   {
+    name: "request_id",
+    label: "请求ID",
+    type: "input",
+    placeholder: "请求ID",
+  },
+  {
     name: "type",
     label: "类型",
     type: "select",
@@ -94,6 +100,15 @@ const columns: DataListColumn<BalanceTransaction>[] = [
     key: "token_id",
     header: "TokenID",
     cell: (row) => (row.token_id ? row.token_id : "-"),
+  },
+  {
+    key: "request_id",
+    header: "请求ID",
+    cell: (row) => (
+      <span className="font-mono text-xs text-muted-foreground">
+        {row.request_id || "-"}
+      </span>
+    ),
   },
   {
     key: "remark",

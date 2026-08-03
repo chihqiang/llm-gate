@@ -219,6 +219,7 @@ type TransactionListRequest struct {
 	Size      int    `form:"size" binding:"required,min=1,max=1000"`
 	AccountID int64  `form:"account_id"`
 	Type      string `form:"type"`
+	RequestID string `form:"request_id"`
 }
 
 type TransactionListResponse struct {
@@ -236,6 +237,9 @@ func (s *BillingLogic) ListTransactions(ctx context.Context, req *TransactionLis
 	}
 	if req.Type != "" {
 		query = query.Where("type = ?", req.Type)
+	}
+	if req.RequestID != "" {
+		query = query.Where("request_id = ?", req.RequestID)
 	}
 	if err := query.Count(&total).Error; err != nil {
 		return nil, err

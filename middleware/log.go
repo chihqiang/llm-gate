@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -141,11 +142,12 @@ func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) ht
 			respStatus := rw.status
 			respBody := rw.body.String()
 			reqPayload := sanitizePayload(string(reqBody))
-			// 在请求期间捕获 context，供后台 worker 记录链路信息（读取 value 安全，不用于 DB）
-			traceCtx := r.Context()
+			// 在请求期间捕获 context，供后台 worker 记录链路信息（值可安全读取）
+			// 用 WithoutCancel 保留 trace/request_id 等值，同时避免请求取消中断 DB 写入
+			traceCtx := context.WithoutCancel(r.Context())
 
 			logWorker.Submit(func() {
-				if err := logLogic.Create(&model.Log{
+				if err := logLogic.Create(traceCtx, &model.Log{
 					RequestPath:    reqURI,
 					RequestMethod:  reqMethod,
 					ResponseCode:   respStatus,

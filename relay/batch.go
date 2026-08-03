@@ -1,12 +1,15 @@
 package relay
 
 import (
+	"context"
+	"strings"
 	"sync"
 	"time"
 
 	"chihqiang/llm-gate/model"
 
 	"github.com/chihqiang/infra-go/logger"
+	"github.com/chihqiang/infra-go/trace"
 	"gorm.io/gorm"
 )
 
@@ -73,9 +76,18 @@ func (b *usageBatch) flush() {
 		return
 	}
 
+	// 后台批量写入没有请求 ctx，从 Background 起根 span，便于在 trace 中定位异步落库问题
+	ctx, span := trace.StartSpan(context.Background(), "usage batch flush",
+		trace.WithAttributes(
+			trace.AttrInt("count", len(batch)),
+		),
+	)
+	defer span.End()
+
 	if err := b.db.CreateInBatches(batch, maxBatchSize).Error; err != nil {
-		logger.Error("flush usage logs failed, queuing for retry", logger.Err(err),
-			logger.Int("count", len(batch)))
+		logger.ErrorCtx(ctx, "flush usage logs failed, queuing for retry", logger.Err(err),
+			logger.Int("count", len(batch)),
+			logger.String("request_ids", requestIDsOf(batch)))
 		b.mu.Lock()
 		b.retryBuf = append(b.retryBuf, batch...)
 		if len(b.retryBuf) > maxRetryLogs {
@@ -85,7 +97,27 @@ func (b *usageBatch) flush() {
 		b.mu.Unlock()
 		return
 	}
-	logger.Info("usage batch flush ok", logger.Int("count", len(batch)))
+	logger.InfoCtx(ctx, "usage batch flush ok", logger.Int("count", len(batch)))
+}
+
+// requestIDsOf 汇总一批用量日志的 request_id，用于失败日志关联具体请求。
+func requestIDsOf(batch []model.UsageLog) string {
+	seen := make(map[string]struct{}, len(batch))
+	var ids []string
+	for _, l := range batch {
+		if l.RequestID == "" {
+			continue
+		}
+		if _, ok := seen[l.RequestID]; ok {
+			continue
+		}
+		seen[l.RequestID] = struct{}{}
+		ids = append(ids, l.RequestID)
+	}
+	if len(ids) > 8 {
+		ids = ids[:8]
+	}
+	return strings.Join(ids, ",")
 }
 
 func (b *usageBatch) loop(interval time.Duration) {
