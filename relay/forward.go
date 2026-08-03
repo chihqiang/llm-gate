@@ -62,6 +62,14 @@ func (e *upstreamError) retryable() bool {
 	return e.status == 0 || e.status >= 500
 }
 
+// committedError 表示响应头已写入客户端后的错误（流式中断）。
+// 此时无法重试或切换候选，只能记录熔断统计与计费。
+type committedError struct {
+	err error
+}
+
+func (e *committedError) Error() string { return "response committed: " + e.err.Error() }
+
 // forward 按候选顺序尝试上游，支持熔断跳过与自动降级。
 // 仅在所有候选都失败或遇到不可重试错误时，才向客户端写入错误响应。
 // 返回 usage（可能为 nil）、是否成功投递响应、错误。
@@ -91,6 +99,10 @@ func (h *RelayHandler) forward(w http.ResponseWriter, r *http.Request, kind stri
 				fmt.Sprintf("服务商 %s 请求失败：%v", cand.Provider.Name, err))
 			lastErr = err
 			ue, ok := err.(*upstreamError)
+			// 已提交响应（流式中断）：不能再次写入错误响应，仅停止降级尝试
+			if _, committed := err.(*committedError); committed {
+				return usage, delivered, err
+			}
 			// 不可重试错误（4xx）或已无更多候选：写入最终错误
 			if !ok || !ue.retryable() || i == len(candidates)-1 {
 				writeFinalError(w, err)
@@ -156,7 +168,11 @@ func (h *RelayHandler) attempt(w http.ResponseWriter, r *http.Request, kind stri
 	writeHeaders(w, last.header, last.status)
 
 	if last.isStream {
-		usage, delivered := proxyStreamWithUsage(w, r.Context(), last.stream)
+		usage, delivered, serr := proxyStreamWithUsage(w, r.Context(), last.stream)
+		if serr != nil {
+			// 响应头已写入，客户端可能已收到部分内容：标记为已提交错误，仅影响熔断统计与结算
+			return usage, delivered, &committedError{err: serr}
+		}
 		return usage, delivered, nil
 	}
 
@@ -215,13 +231,14 @@ func (h *RelayHandler) doForward(ctx context.Context, kind string, cand upstream
 
 // proxyStreamWithUsage 实时转发 SSE 流，同时解析 usage。
 // 客户端断开后停止写入但继续读取上游（排水），以捕获末尾的 usage 数据，确保计费准确。
-// 返回 usage 和是否成功投递了至少一行数据。
-func proxyStreamWithUsage(w http.ResponseWriter, ctx context.Context, upstreamBody io.ReadCloser) (*usageData, bool) {
+// 返回 usage、是否成功投递了至少一行数据、上游读取错误（若流中断）。
+func proxyStreamWithUsage(w http.ResponseWriter, ctx context.Context, upstreamBody io.ReadCloser) (*usageData, bool, error) {
 	defer upstreamBody.Close()
 
 	var usage *usageData
 	delivered := false
 	clientGone := false
+	sawDone := false
 	flusher, _ := w.(http.Flusher)
 
 	scanner := bufio.NewScanner(upstreamBody)
@@ -255,6 +272,7 @@ func proxyStreamWithUsage(w http.ResponseWriter, ctx context.Context, upstreamBo
 		}
 
 		if bytes.Equal(bytes.TrimSpace(data), []byte("[DONE]")) {
+			sawDone = true
 			continue
 		}
 		if !bytes.Contains(data, []byte("usage")) {
@@ -267,11 +285,21 @@ func proxyStreamWithUsage(w http.ResponseWriter, ctx context.Context, upstreamBo
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		logger.Error("relay stream: scanner error, usage may be incomplete", logger.Err(err))
+	// 上游正常结束但未发 DONE 时补发，保证流式协议完整（客户端未断开且无错误）
+	if scanner.Err() == nil && !sawDone && !clientGone && delivered {
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
 	}
 
-	return usage, delivered
+	// 上游读取失败（非 EOF）视为流中断，用于熔断统计
+	if err := scanner.Err(); err != nil {
+		logger.Error("relay stream: scanner error, usage may be incomplete", logger.Err(err))
+		return usage, delivered, err
+	}
+
+	return usage, delivered, nil
 }
 
 func extractUsage(body []byte) *usageData {
@@ -304,11 +332,31 @@ func endpointPath(kind string) string {
 }
 
 // writeHeaders 复制上游响应头并写入状态码。
+// 剔除 hop-by-hop 头与 Content-Length：Content-Length 由 Go 在响应结束时自动计算/分块。
 func writeHeaders(w http.ResponseWriter, header http.Header, status int) {
 	for k, v := range header {
+		if isHopByHopHeader(k) || k == "Content-Length" {
+			continue
+		}
 		w.Header()[k] = v
 	}
 	w.WriteHeader(status)
+}
+
+var hopByHopHeaders = map[string]bool{
+	"Connection":          true,
+	"Keep-Alive":          true,
+	"Proxy-Authenticate":  true,
+	"Proxy-Authorization": true,
+	"Proxy-Connection":    true,
+	"TE":                  true,
+	"Trailer":             true,
+	"Transfer-Encoding":   true,
+	"Upgrade":             true,
+}
+
+func isHopByHopHeader(name string) bool {
+	return hopByHopHeaders[name]
 }
 
 // writeFinalError 向客户端写入最终错误响应。
@@ -343,4 +391,17 @@ func writeFinalError(w http.ResponseWriter, err error) {
 func isStreamingResponse(resp *http.Response) bool {
 	ct := resp.Header.Get("Content-Type")
 	return strings.Contains(ct, "text/event-stream")
+}
+
+// writeOpenAIError 按 OpenAI 兼容格式写入错误，携带正确的 HTTP 状态码。
+func writeOpenAIError(w http.ResponseWriter, status int, errType, message string) {
+	body, _ := json.Marshal(map[string]interface{}{
+		"error": map[string]string{
+			"message": message,
+			"type":    errType,
+		},
+	})
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
 }

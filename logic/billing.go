@@ -192,9 +192,10 @@ func (s *BillingLogic) AdjustBalance(accountID, cents int64, remark string, oper
 			err = tx.Model(&model.Account{}).Where("id = ?", accountID).
 				UpdateColumn("balance_cents", gorm.Expr("balance_cents + ?", cents)).Error
 		} else {
-			err = tx.Model(&model.Account{}).Where("id = ? AND balance_cents >= ?", accountID, -cents).
-				UpdateColumn("balance_cents", gorm.Expr("balance_cents + ?", cents)).Error
-			if err == nil && tx.RowsAffected == 0 {
+			res := tx.Model(&model.Account{}).Where("id = ? AND balance_cents >= ?", accountID, -cents).
+				UpdateColumn("balance_cents", gorm.Expr("balance_cents + ?", cents))
+			err = res.Error
+			if err == nil && res.RowsAffected == 0 {
 				return ErrBalanceInsufficient
 			}
 		}

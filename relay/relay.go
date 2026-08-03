@@ -34,6 +34,7 @@ type settleJob struct {
 	providerID           int64
 	requestID            string
 	preConsumeCents      int64
+	reserveQuotaCents    int64
 	actualCents          int64
 	estimated            bool
 	actualPromptTokens   int
@@ -107,63 +108,85 @@ func (h *RelayHandler) Stop() {
 
 func (h *RelayHandler) settleWorker() {
 	for job := range h.settleCh {
-		if job.actualCents > 0 {
-			delta := job.actualCents - job.preConsumeCents
-			var err error
-			if delta > 0 {
-				err = DeductBalance(h.db, job.accountID, delta)
-			} else if delta < 0 {
-				err = RefundBalance(h.db, job.accountID, -delta)
-			}
-			if err != nil {
-				logger.Error("relay settle: balance settle failed, refund pre-consume",
-					logger.Err(err),
-					logger.Int64("account_id", job.accountID),
-					logger.Int64("pre_consume", job.preConsumeCents))
-				// 结算失败时退回首轮预扣，避免用户被多扣
-				_ = RefundBalance(h.db, job.accountID, job.preConsumeCents)
-				continue
-			}
-
-			if err := AddTokenSpent(h.db, job.tokenID, job.actualCents); err != nil {
-				logger.Error("relay settle: add token spent failed",
-					logger.Err(err), logger.Int64("token_id", job.tokenID))
-			}
-			h.appendBalanceTxn(job, -job.actualCents, model.TransactionConsume,
-				fmt.Sprintf("消费：模型 %s", job.modelName))
-
-			h.usageBatch.Append(model.UsageLog{
-				AccountID:        job.accountID,
-				TokenID:          job.tokenID,
-				ModelName:        job.modelName,
-				ProviderID:       job.providerID,
-				PromptTokens:     job.actualPromptTokens,
-				CompletionTokens: job.actualCompletionTokens,
-				TotalTokens:      job.actualPromptTokens + job.actualCompletionTokens,
-				CostCents:        job.actualCents,
-				Estimated:        job.estimated,
-				RequestID:        job.requestID,
-			})
-		} else {
-			// 无实际费用：退还预扣
-			if err := RefundBalance(h.db, job.accountID, job.preConsumeCents); err != nil {
-				logger.Error("relay settle: refund pre-consume failed",
-					logger.Err(err), logger.Int64("account_id", job.accountID))
-				continue
-			}
-			h.appendBalanceTxn(job, job.preConsumeCents, model.TransactionRefund,
-				fmt.Sprintf("退款：模型 %s", job.modelName))
-		}
+		h.processJob(job)
 	}
 }
 
-// appendBalanceTxn 写入余额流水（余额快照读取当前值）。
-func (h *RelayHandler) appendBalanceTxn(job settleJob, amountCents int64, txnType, remark string) {
-	balance, err := GetAccountBalance(h.db, job.accountID)
+// processJob 执行单个结算任务：多退少补 + 写流水 + 累计 Token 消费 + 用量日志。
+// 资金变动与流水写入在同一事务中，保证账目一致。
+func (h *RelayHandler) processJob(job settleJob) {
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if job.actualCents <= 0 {
+			// 无实际费用：退还预扣并释放预占额度
+			if err := RefundBalanceTx(tx, job.accountID, job.preConsumeCents); err != nil {
+				return err
+			}
+			if err := AdjustTokenSpentTx(tx, job.tokenID, -job.reserveQuotaCents); err != nil {
+				return err
+			}
+			return h.appendBalanceTxnTx(tx, job, job.preConsumeCents, model.TransactionRefund,
+				fmt.Sprintf("退款：模型 %s", job.modelName))
+		}
+
+		delta := job.actualCents - job.preConsumeCents
+		if delta > 0 {
+			if err := DeductBalanceTx(tx, job.accountID, delta); err != nil {
+				return err
+			}
+		} else if delta < 0 {
+			if err := RefundBalanceTx(tx, job.accountID, -delta); err != nil {
+				return err
+			}
+		}
+		// 结算时把预占额度调整为实际消费（spent_cents 已含预占 reserveQuotaCents）
+		if err := AdjustTokenSpentTx(tx, job.tokenID, job.actualCents-job.reserveQuotaCents); err != nil {
+			return err
+		}
+		return h.appendBalanceTxnTx(tx, job, -job.actualCents, model.TransactionConsume,
+			fmt.Sprintf("消费：模型 %s", job.modelName))
+	})
+
 	if err != nil {
+		logger.Error("relay settle: settle failed, keep pre-consume for manual review",
+			logger.Err(err),
+			logger.Int64("account_id", job.accountID),
+			logger.Int64("token_id", job.tokenID),
+			logger.Int64("pre_consume", job.preConsumeCents),
+			logger.Int64("actual_cents", job.actualCents),
+			logger.String("request_id", job.requestID))
+		// 结算失败不退还预扣：请求已消费上游资源，退还会造成免费滥用。
+		// 保留 preConsume 扣款，释放预占额度，等待人工对账。
+		_ = AdjustTokenSpentTx(h.db, job.tokenID, -job.reserveQuotaCents)
+		h.notifier.Send(fmt.Sprintf("settle_fail_%d", job.accountID), "账单结算失败",
+			fmt.Sprintf("账户 %d 请求 %s 结算失败，已按预扣 %d 分计费，请人工对账",
+				job.accountID, job.requestID, job.preConsumeCents))
 		return
 	}
-	if err := h.db.Create(&model.Transaction{
+
+	// 用量日志走异步批量写入，不计入资金事务
+	if job.actualCents > 0 {
+		h.usageBatch.Append(model.UsageLog{
+			AccountID:        job.accountID,
+			TokenID:          job.tokenID,
+			ModelName:        job.modelName,
+			ProviderID:       job.providerID,
+			PromptTokens:     job.actualPromptTokens,
+			CompletionTokens: job.actualCompletionTokens,
+			TotalTokens:      job.actualPromptTokens + job.actualCompletionTokens,
+			CostCents:        job.actualCents,
+			Estimated:        job.estimated,
+			RequestID:        job.requestID,
+		})
+	}
+}
+
+// appendBalanceTxnTx 在给定事务内写入余额流水，余额快照读取当前值。
+func (h *RelayHandler) appendBalanceTxnTx(tx *gorm.DB, job settleJob, amountCents int64, txnType, remark string) error {
+	balance, err := GetAccountBalanceTx(tx, job.accountID)
+	if err != nil {
+		return err
+	}
+	return tx.Create(&model.Transaction{
 		AccountID:    job.accountID,
 		Type:         txnType,
 		AmountCents:  amountCents,
@@ -171,7 +194,12 @@ func (h *RelayHandler) appendBalanceTxn(job settleJob, amountCents int64, txnTyp
 		TokenID:      job.tokenID,
 		RequestID:    job.requestID,
 		Remark:       remark,
-	}).Error; err != nil {
+	}).Error
+}
+
+// appendBalanceTxn 独立写入余额流水（非事务场景使用，如预扣失败退款）。
+func (h *RelayHandler) appendBalanceTxn(job settleJob, amountCents int64, txnType, remark string) {
+	if err := h.appendBalanceTxnTx(h.db, job, amountCents, txnType, remark); err != nil {
 		logger.Error("relay settle: append transaction failed", logger.Err(err))
 	}
 }
@@ -190,13 +218,13 @@ func (h *RelayHandler) Embeddings(w http.ResponseWriter, r *http.Request) {
 func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string, forceNonStream bool) {
 	key := extractBearerToken(r)
 	if key == "" {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeUnauthorized, "missing authorization header"))
+		writeOpenAIError(w, http.StatusUnauthorized, "authentication_error", "missing authorization header")
 		return
 	}
 
 	authResult, err := h.authenticateCached(key)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeUnauthorized, err.Error()))
+		writeOpenAIError(w, http.StatusUnauthorized, "authentication_error", err.Error())
 		return
 	}
 
@@ -205,7 +233,7 @@ func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string
 	if rl.Enabled {
 		limiter, _ := h.rateLimiters.GetOrSet(key, ratelimit.NewTokenBucket(rl.Rate, rl.Burst))
 		if !limiter.Allow() {
-			httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, "rate limit exceeded"))
+			writeOpenAIError(w, http.StatusTooManyRequests, "rate_limit_error", "rate limit exceeded")
 			return
 		}
 	}
@@ -213,12 +241,12 @@ func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string
 		limiter, _ := h.accountLimiters.GetOrSet(authResult.Account.ID,
 			ratelimit.NewTokenBucket(rl.AccountRate, rl.AccountBurst))
 		if !limiter.Allow() {
-			httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, "account rate limit exceeded"))
+			writeOpenAIError(w, http.StatusTooManyRequests, "rate_limit_error", "account rate limit exceeded")
 			return
 		}
 	}
 	if h.globalLimiter != nil && !h.globalLimiter.Allow() {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, "global rate limit exceeded"))
+		writeOpenAIError(w, http.StatusTooManyRequests, "rate_limit_error", "global rate limit exceeded")
 		return
 	}
 
@@ -226,34 +254,34 @@ func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string
 	maxBodyBytes := int64(h.relayCfg.MaxBodyMB) << 20
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, "failed to read request body"))
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "failed to read request body")
 		return
 	}
 	if int64(len(body)) > maxBodyBytes {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, "request body too large"))
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "request body too large")
 		return
 	}
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, "invalid request body"))
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "invalid request body")
 		return
 	}
 
 	modelName := extractFieldString(raw, "model")
 	if modelName == "" {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, "model is required"))
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "model is required")
 		return
 	}
 
 	if err := validateRequestBody(raw); err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
 
 	resolveResult, err := h.resolveCached(modelName, authResult.Token)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
 
@@ -261,19 +289,37 @@ func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string
 
 	isStream := !forceNonStream && extractFieldBool(raw, "stream")
 
-	// 预扣余额：先尝试配置值，余额不足则降级为 1
+	// 预扣余额：余额必须足以支付预扣金额，不足直接拒绝（不允许降级预扣，避免账单漏洞）
 	preConsumeCents := h.relayCfg.PreConsumeCents
 	if err := DeductBalance(h.db, authResult.Account.ID, preConsumeCents); err != nil {
-		preConsumeCents = 1
-		if err := DeductBalance(h.db, authResult.Account.ID, 1); err != nil {
-			errMsg := "insufficient balance"
-			if !errors.Is(err, ErrInsufficientQuota) {
-				errMsg = "billing service unavailable"
-			}
-			h.notifyBalanceLow(authResult.Account)
-			httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, errMsg))
-			return
+		errMsg := "insufficient balance"
+		errType := "insufficient_quota"
+		status := http.StatusPaymentRequired
+		if !errors.Is(err, ErrInsufficientQuota) {
+			errMsg = "billing service unavailable"
+			errType = "api_error"
+			status = http.StatusInternalServerError
 		}
+		h.notifyBalanceLow(authResult.Account)
+		writeOpenAIError(w, status, errType, errMsg)
+		return
+	}
+
+	// 原子预占 Token 预算额度（最多预扣金额，保证并发下不超预算；预算耗尽时退回余额预扣并拒绝）
+	reserveQuotaCents := preConsumeCents
+	if authResult.Token.Quota > 0 && reserveQuotaCents > authResult.Token.Quota {
+		reserveQuotaCents = authResult.Token.Quota
+	}
+	if err := ReserveTokenQuota(h.db, authResult.Token.ID, reserveQuotaCents, authResult.Token.Quota); err != nil {
+		_ = RefundBalance(h.db, authResult.Account.ID, preConsumeCents)
+		if errors.Is(err, ErrQuotaExhausted) {
+			writeOpenAIError(w, http.StatusPaymentRequired, "insufficient_quota", "key budget exhausted")
+		} else {
+			logger.Error("relay: reserve token quota failed", logger.Err(err),
+				logger.Int64("token_id", authResult.Token.ID))
+			writeOpenAIError(w, http.StatusInternalServerError, "api_error", "billing service unavailable")
+		}
+		return
 	}
 
 	logger.Info("relay request start",
@@ -289,7 +335,13 @@ func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string
 		logger.Warn("relay forward failed",
 			logger.String("request_id", requestID),
 			logger.Err(forwardErr))
+		// 已提交响应（流式中断）：上游可能已产出内容，按 usage/投递情况结算，不退款
+		if _, committed := forwardErr.(*committedError); committed {
+			h.finalizeAndSettle(authResult, resolveResult, requestID, preConsumeCents, reserveQuotaCents, usage, delivered)
+			return
+		}
 		refundWithRetry(h.db, authResult.Account.ID, preConsumeCents)
+		_ = AdjustTokenSpentTx(h.db, authResult.Token.ID, -reserveQuotaCents)
 		h.appendBalanceTxn(settleJob{
 			accountID:       authResult.Account.ID,
 			tokenID:         authResult.Token.ID,
@@ -298,6 +350,13 @@ func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string
 		}, preConsumeCents, model.TransactionRefund, "退款：上游失败")
 		return
 	}
+
+	h.finalizeAndSettle(authResult, resolveResult, requestID, preConsumeCents, reserveQuotaCents, usage, delivered)
+}
+
+// finalizeAndSettle 计算实际费用并入队异步结算。
+func (h *RelayHandler) finalizeAndSettle(authResult *AuthResult, resolveResult *ResolveResult, requestID string,
+	preConsumeCents, reserveQuotaCents int64, usage *usageData, delivered bool) {
 
 	var actualPromptTokens, actualCompletionTokens int
 	var actualCents int64
@@ -324,36 +383,40 @@ func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string
 			logger.Int64("cost_cents", actualCents))
 	}
 
-	select {
-	case h.settleCh <- settleJob{
-		accountID:            authResult.Account.ID,
-		tokenID:              authResult.Token.ID,
-		modelName:            resolveResult.Model.Name,
-		providerID:           resolveResult.Provider.ID,
-		requestID:            requestID,
-		preConsumeCents:      preConsumeCents,
-		actualCents:          actualCents,
-		estimated:            estimated,
-		actualPromptTokens:   actualPromptTokens,
+	job := settleJob{
+		accountID:              authResult.Account.ID,
+		tokenID:                authResult.Token.ID,
+		modelName:              resolveResult.Model.Name,
+		providerID:             resolveResult.Provider.ID,
+		requestID:              requestID,
+		preConsumeCents:        preConsumeCents,
+		reserveQuotaCents:      reserveQuotaCents,
+		actualCents:            actualCents,
+		estimated:              estimated,
+		actualPromptTokens:     actualPromptTokens,
 		actualCompletionTokens: actualCompletionTokens,
-	}:
+	}
+
+	select {
+	case h.settleCh <- job:
 	default:
-		logger.Warn("relay settle channel full, falling back to sync refund",
+		// 队列满：同步结算，避免账单丢失（请求已在客户端写入完毕，短暂阻塞可接受）
+		logger.Warn("relay settle channel full, settling synchronously",
 			logger.String("request_id", requestID))
-		refundWithRetry(h.db, authResult.Account.ID, preConsumeCents)
+		h.processJob(job)
 	}
 }
 
 func (h *RelayHandler) ListModels(w http.ResponseWriter, r *http.Request) {
 	key := extractBearerToken(r)
 	if key == "" {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeUnauthorized, "missing authorization header"))
+		writeOpenAIError(w, http.StatusUnauthorized, "authentication_error", "missing authorization header")
 		return
 	}
 
 	authResult, err := h.authenticateCached(key)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeUnauthorized, err.Error()))
+		writeOpenAIError(w, http.StatusUnauthorized, "authentication_error", err.Error())
 		return
 	}
 
@@ -367,7 +430,7 @@ func (h *RelayHandler) ListModels(w http.ResponseWriter, r *http.Request) {
 		}
 		var models []model.ModelConfig
 		if err := h.db.Where("status = ?", true).Find(&models).Error; err != nil {
-			httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+			writeOpenAIError(w, http.StatusInternalServerError, "api_error", err.Error())
 			return
 		}
 		data := make([]modelItem, 0, len(models))
@@ -391,7 +454,7 @@ func (h *RelayHandler) ListModels(w http.ResponseWriter, r *http.Request) {
 	logger.Info("relay models list cache miss")
 	var models []model.ModelConfig
 	if err := h.db.Where("status = ?", true).Find(&models).Error; err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		writeOpenAIError(w, http.StatusInternalServerError, "api_error", err.Error())
 		return
 	}
 
@@ -430,9 +493,15 @@ func (h *RelayHandler) authenticateCached(key string) (*AuthResult, error) {
 		return nil, fmt.Errorf("token expired")
 	}
 
-	// 预算：quota>0 表示该 Key 的累计消费上限，0 表示不限
-	if token.Quota > 0 && token.SpentCents >= token.Quota {
-		return nil, fmt.Errorf("key budget exhausted")
+	// 预算：quota>0 表示该 Key 的累计消费上限，0 表示不限。
+	// SpentCents 随每次结算变化，且认证结果被缓存，因此预算超限必须读实时值，避免缓存导致的超额放行。
+	if token.Quota > 0 {
+		if err := h.db.Select("spent_cents").First(&token, token.ID).Error; err != nil {
+			return nil, fmt.Errorf("token not found")
+		}
+		if token.SpentCents >= token.Quota {
+			return nil, fmt.Errorf("key budget exhausted")
+		}
 	}
 
 	var account model.Account
@@ -442,8 +511,14 @@ func (h *RelayHandler) authenticateCached(key string) (*AuthResult, error) {
 	if !account.Status {
 		return nil, fmt.Errorf("account disabled")
 	}
+	// 认证结果被缓存，余额 <= 0 时读实时值，避免充值后仍被误拒（真实扣款由 DeductBalance 原子保障）
 	if account.BalanceCents <= 0 {
-		return nil, fmt.Errorf("insufficient balance")
+		if err := h.db.Select("balance_cents").First(&account, account.ID).Error; err != nil {
+			return nil, fmt.Errorf("account not found")
+		}
+		if account.BalanceCents <= 0 {
+			return nil, fmt.Errorf("insufficient balance")
+		}
 	}
 
 	result := &AuthResult{Token: &token, Account: &account}

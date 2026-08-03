@@ -21,15 +21,48 @@ jwt:
 relay:
   timeout: 120
   max_body_mb: 32
-  pre_consume_quota: 1000
+  pre_consume_cents: 100
+  stream_fallback_cents: 100
   rate_limit:
     enabled: true
     rate: 10
     burst: 20
+    global_rate: 0
+    global_burst: 0
+    account_rate: 0
+    account_burst: 0
   upstream:
     retry_enabled: true
     max_retries: 2
     retry_delay_ms: 200
+  failover:
+    enabled: true
+    failure_threshold: 5
+    window: 60s
+    cooldown: 30s
+    health_probe_enabled: true
+    health_probe_interval: 30s
+
+billing:
+  base_price_cents_per_1k: 2
+  min_balance_cents: 1000
+
+security:
+  # AES-256 加密密钥，64 位十六进制（32 字节）；未配置时回退到 JWT Secret 派生，生产环境必须配置
+  encrypt_key: ""
+  reveal_audit: true
+
+retention:
+  usage_days: 0
+  transaction_days: 0
+  expired_token_grace_days: 0
+  check_interval: 24h
+
+alert:
+  enabled: false
+  webhook_url: ""
+  sign_secret: ""
+  cooldown: 10m
 
 cors:
   allow_origins:
