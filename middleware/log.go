@@ -209,14 +209,16 @@ func parseOS(ua string) string {
 		return "Windows 7"
 	case strings.Contains(ua, "Windows"):
 		return "Windows"
-	case strings.Contains(ua, "Mac OS X"):
-		if idx := strings.Index(ua, "Mac OS X"); idx >= 0 {
-			end := strings.Index(ua[idx:], ")")
-			if end > 0 {
-				return strings.ReplaceAll(ua[idx:idx+end], "_", ".")
+	case strings.Contains(ua, "iPhone OS"):
+		if idx := strings.Index(ua, "iPhone OS"); idx >= 0 {
+			parts := strings.SplitN(ua[idx:], " ", 4)
+			if len(parts) >= 3 {
+				return "iPhone OS " + strings.ReplaceAll(parts[2], "_", ".")
 			}
 		}
-		return "Mac OS X"
+		return "iOS"
+	case strings.Contains(ua, "iPad"):
+		return "iPadOS"
 	case strings.Contains(ua, "Android"):
 		if idx := strings.Index(ua, "Android"); idx >= 0 {
 			rest := ua[idx:]
@@ -227,16 +229,14 @@ func parseOS(ua string) string {
 			return rest
 		}
 		return "Android"
-	case strings.Contains(ua, "iPhone OS"):
-		if idx := strings.Index(ua, "iPhone OS"); idx >= 0 {
-			end := strings.Index(ua[idx:], " ")
+	case strings.Contains(ua, "Mac OS X"):
+		if idx := strings.Index(ua, "Mac OS X"); idx >= 0 {
+			end := strings.Index(ua[idx:], ")")
 			if end > 0 {
-				return ua[idx : idx+end]
+				return strings.ReplaceAll(ua[idx:idx+end], "_", ".")
 			}
 		}
-		return "iOS"
-	case strings.Contains(ua, "iPad"):
-		return "iPadOS"
+		return "Mac OS X"
 	case strings.Contains(ua, "Linux"):
 		return "Linux"
 	case strings.Contains(ua, "CrOS"):
