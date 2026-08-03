@@ -95,7 +95,7 @@ export function ApiKeyDialog({
       await tokenCreateApi({
         account_id: accountId,
         name: newName.trim(),
-        quota: 100000,
+        quota: 0,
         status: true,
       })
       toast.success("创建成功")
@@ -171,7 +171,8 @@ export function ApiKeyDialog({
                     <CopyBtn tokenId={t.id} />
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    配额: {t.quota.toLocaleString()}
+                    预算: {t.quota > 0 ? `¥${(t.quota / 100).toFixed(2)}` : "不限"}
+                    {" · "}已消费: ¥{(t.spent_cents / 100).toFixed(2)}
                     {t.status ? "" : " (已禁用)"}
                   </div>
                 </div>

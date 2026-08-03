@@ -6,6 +6,7 @@ import { DashboardStats, dashboardStatsApi } from "@/api/dashboard"
 import { Crud, SearchField } from "@/components/widgets/crud"
 import { DataListColumn } from "@/components/widgets/data-list"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { cn } from "@/lib/utils"
 
 function StatCard({
   title,
@@ -89,9 +90,21 @@ const usageColumns: DataListColumn<UsageLog>[] = [
     cell: (row) => row.total_tokens.toLocaleString(),
   },
   {
-    key: "quota_cost",
-    header: "消耗配额",
-    cell: (row) => row.quota_cost.toLocaleString(),
+    key: "cost_cents",
+    header: "费用",
+    cell: (row) => (
+      <span className={cn("font-medium", row.estimated && "text-muted-foreground")}>
+        {`¥${(row.cost_cents / 100).toFixed(2)}`}
+        {row.estimated && (
+          <span
+            className="ml-1 rounded bg-muted px-1 text-xs text-muted-foreground"
+            title="流式请求未返回 usage，按投递估算计费"
+          >
+            估算
+          </span>
+        )}
+      </span>
+    ),
   },
   {
     key: "created_at",

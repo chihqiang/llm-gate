@@ -120,6 +120,15 @@ import {
   GitPullRequest,
   BarChart3,
   ExternalLinkIcon,
+  Receipt,
+  ListChecks,
+  Wallet,
+  History,
+  HandCoins,
+  Banknote,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  CircleDollarSign,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import Link from "next/link"
@@ -245,6 +254,15 @@ const iconMap: Record<string, LucideIcon> = {
   GitMerge,
   GitPullRequest,
   BarChart3,
+  Receipt,
+  ListChecks,
+  Wallet,
+  History,
+  HandCoins,
+  Banknote,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  CircleDollarSign,
 }
 
 interface IconProps {

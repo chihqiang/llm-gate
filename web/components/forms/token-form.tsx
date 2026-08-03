@@ -9,7 +9,7 @@ import {
   LSelectOption,
 } from "@/components/widgets/form-fields"
 import { accountListApi } from "@/api/account"
-import type { UserToken } from "@/api/llm"
+import { modelAllListApi, type UserToken } from "@/api/llm"
 
 interface TokenFormProps {
   formData: UserToken
@@ -18,6 +18,7 @@ interface TokenFormProps {
 
 export function TokenForm({ formData, onChange }: TokenFormProps) {
   const [accountOptions, setAccountOptions] = useState<LSelectOption[]>([])
+  const [modelOptions, setModelOptions] = useState<LSelectOption[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -28,6 +29,18 @@ export function TokenForm({ formData, onChange }: TokenFormProps) {
             res.data.map((a) => ({
               value: a.id,
               label: `${a.name} (${a.email})`,
+            }))
+          )
+        }
+      })
+      .catch(() => {})
+    modelAllListApi()
+      .then((models) => {
+        if (!cancelled) {
+          setModelOptions(
+            models.map((m) => ({
+              value: m.id,
+              label: `${m.name} (#${m.id})`,
             }))
           )
         }
@@ -61,13 +74,36 @@ export function TokenForm({ formData, onChange }: TokenFormProps) {
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="quota">配额</Label>
+        <Label htmlFor="quota">预算（元，0=不限）</Label>
         <Input
           id="quota"
           type="number"
-          value={formData.quota}
+          min="0"
+          step="0.01"
+          value={formData.quota > 0 ? (formData.quota / 100).toFixed(2) : "0"}
           onChange={(e) =>
-            onChange({ ...formData, quota: parseInt(e.target.value) || 0 })
+            onChange({
+              ...formData,
+              quota: Math.round(parseFloat(e.target.value) * 100) || 0,
+            })
+          }
+        />
+        <p className="text-xs text-muted-foreground">
+          该 Key 累计消费上限，超出后请求将被拒绝。单位：元
+        </p>
+      </div>
+      <div className="space-y-2">
+        <LSelect
+          id="model_ids"
+          label="模型白名单（不选=全部模型）"
+          value={formData.model_ids}
+          options={modelOptions}
+          multiSelect
+          onChange={(value) =>
+            onChange({
+              ...formData,
+              model_ids: (value ?? []).map((v) => Number(v)),
+            })
           }
         />
       </div>

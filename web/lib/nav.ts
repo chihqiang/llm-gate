@@ -9,6 +9,9 @@ import {
   UserCog,
   Users,
   MessageSquare,
+  CreditCard,
+  Receipt,
+  ListChecks,
 } from "lucide-react"
 import { getAccount } from "@/lib/account"
 
@@ -86,6 +89,25 @@ export const menus: Menu[] = [
         label: "聊天",
         icon: MessageSquare,
         path: "/admin/sys/llm/chat",
+      },
+    ],
+  },
+  {
+    key: "billing",
+    label: "计费中心",
+    icon: CreditCard,
+    children: [
+      {
+        key: "orders",
+        label: "充值订单",
+        icon: Receipt,
+        path: "/admin/billing/orders",
+      },
+      {
+        key: "transactions",
+        label: "资金流水",
+        icon: ListChecks,
+        path: "/admin/billing/transactions",
       },
     ],
   },

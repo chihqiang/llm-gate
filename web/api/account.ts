@@ -23,6 +23,7 @@ export interface Account {
   email: string
   roles: AccountRole[]
   status: boolean
+  balance_cents: number
 }
 
 export interface AccountCreateUpdate extends Account {

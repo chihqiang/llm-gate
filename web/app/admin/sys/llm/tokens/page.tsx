@@ -87,8 +87,22 @@ const columns: DataListColumn<UserToken>[] = [
   },
   {
     key: "quota",
-    header: "剩余配额",
-    cell: (row) => row.quota.toLocaleString(),
+    header: "预算",
+    cell: (row) =>
+      row.quota > 0 ? `¥${(row.quota / 100).toFixed(2)}` : "不限",
+  },
+  {
+    key: "spent_cents",
+    header: "已消费",
+    cell: (row) => `¥${(row.spent_cents / 100).toFixed(2)}`,
+  },
+  {
+    key: "model_ids",
+    header: "模型白名单",
+    cell: (row) =>
+      row.model_ids && row.model_ids.length > 0
+        ? row.model_ids.join(", ")
+        : "全部",
   },
   {
     key: "status",
@@ -104,6 +118,8 @@ const defaultFormData: UserToken = {
   key: "",
   key_masked: "",
   quota: 0,
+  spent_cents: 0,
+  model_ids: [],
   status: true,
   expired_at: null,
   created_at: "",

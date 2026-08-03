@@ -152,6 +152,8 @@ export interface UserToken {
   key: string
   key_masked: string
   quota: number
+  spent_cents: number
+  model_ids: number[]
   status: boolean
   expired_at: string | null
   created_at: string
@@ -211,6 +213,8 @@ export interface UsageLog {
   completion_tokens: number
   total_tokens: number
   quota_cost: number
+  cost_cents: number
+  estimated: boolean
   request_id: string
   created_at: string
   account_name: string
