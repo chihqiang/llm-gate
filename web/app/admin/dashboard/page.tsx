@@ -149,8 +149,10 @@ export default function DashboardPage() {
       value: dashStats ? dashStats.today_tokens.toLocaleString() : "-",
     },
     {
-      title: "总配额消耗",
-      value: dashStats ? dashStats.total_quota.toLocaleString() : "-",
+      title: "总消费",
+      value: dashStats
+        ? `¥${(dashStats.total_cost_cents / 100).toFixed(2)}`
+        : "-",
     },
     {
       title: "活跃 Key",

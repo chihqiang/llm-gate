@@ -12,6 +12,7 @@ type DashboardStats struct {
 	TotalTokens    int64 `json:"total_tokens"`
 	TodayTokens    int64 `json:"today_tokens"`
 	TotalQuota     int64 `json:"total_quota"`
+	TotalCostCents int64 `json:"total_cost_cents"`
 	ActiveTokens   int64 `json:"active_tokens"`
 	TotalProviders int64 `json:"total_providers"`
 	TotalModels    int64 `json:"total_models"`
@@ -59,6 +60,7 @@ func (s *DashboardLogic) GetStats(accountID int64) (*DashboardStats, error) {
 		(SELECT COALESCE(SUM(total_tokens), 0) FROM llm_usage_logs WHERE 1=1` + usageAnd + `) AS total_tokens,
 		(SELECT COALESCE(SUM(total_tokens), 0) FROM llm_usage_logs WHERE created_at >= ?` + usageAnd + `) AS today_tokens,
 		(SELECT COALESCE(SUM(quota_cost), 0) FROM llm_usage_logs WHERE 1=1` + usageAnd + `) AS total_quota,
+		(SELECT COALESCE(SUM(cost_cents), 0) FROM llm_usage_logs WHERE 1=1` + usageAnd + `) AS total_cost_cents,
 		(SELECT COUNT(*) FROM llm_user_tokens WHERE status = 1 AND (expired_at IS NULL OR expired_at > ?)` + tokenAnd + `) AS active_tokens,
 		(SELECT COUNT(*) FROM llm_providers) AS total_providers,
 		(SELECT COUNT(*) FROM llm_models) AS total_models`

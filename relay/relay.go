@@ -173,6 +173,7 @@ func (h *RelayHandler) processJob(job settleJob) {
 			PromptTokens:     job.actualPromptTokens,
 			CompletionTokens: job.actualCompletionTokens,
 			TotalTokens:      job.actualPromptTokens + job.actualCompletionTokens,
+			QuotaCost:        job.actualCents,
 			CostCents:        job.actualCents,
 			Estimated:        job.estimated,
 			RequestID:        job.requestID,
