@@ -155,8 +155,7 @@ func (h *RelayHandler) processJob(job settleJob) {
 			logger.Int64("account_id", job.accountID),
 			logger.Int64("token_id", job.tokenID),
 			logger.Int64("pre_consume", job.preConsumeCents),
-			logger.Int64("actual_cents", job.actualCents),
-			logger.String("request_id", job.requestID))
+			logger.Int64("actual_cents", job.actualCents))
 		// 结算失败不退还预扣：请求已消费上游资源，退还会造成免费滥用。
 		// 保留 preConsume 扣款，释放预占额度，等待人工对账。
 		_ = AdjustTokenSpentTx(h.db.WithContext(job.ctx), job.tokenID, -job.reserveQuotaCents)
@@ -221,7 +220,11 @@ func (h *RelayHandler) Embeddings(w http.ResponseWriter, r *http.Request) {
 // relay 通用转发流程：认证 → 限流 → 解析模型 → 预扣余额 → 转发 → 异步结算。
 func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string, forceNonStream bool) {
 	ctx := r.Context()
-	requestID := h.requestID(r)
+	// 优先沿用全局中间件注入的 request_id（与响应头 X-Request-Id 一致）
+	requestID := httpx.RequestIDFromContext(ctx)
+	if requestID == "" {
+		requestID = h.requestID(r)
+	}
 	ctx, span := trace.StartSpan(ctx, "relay "+kind,
 		trace.WithAttributes(
 			trace.AttrString("request_id", requestID),
@@ -337,17 +340,15 @@ func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string
 	}
 
 	logger.InfoCtx(ctx, "relay request start",
-		logger.String("request_id", requestID),
 		logger.String("model", modelName),
 		logger.String("kind", kind),
 		logger.Bool("stream", isStream),
 		logger.Int64("token_id", authResult.Token.ID),
 		logger.Int64("account_id", authResult.Account.ID))
 
-	usage, delivered, forwardErr, winner := h.forward(ctx, w, r, kind, resolveResult.Candidates, raw, isStream, requestID)
+	usage, delivered, forwardErr, winner := h.forward(ctx, w, r, kind, resolveResult.Candidates, raw, isStream)
 	if forwardErr != nil {
 		logger.WarnCtx(ctx, "relay forward failed",
-			logger.String("request_id", requestID),
 			logger.Err(forwardErr))
 		// 已提交响应（流式中断）：上游可能已产出内容，按 usage/投递情况结算，不退款
 		if _, committed := forwardErr.(*committedError); committed {
@@ -357,7 +358,7 @@ func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string
 		refundWithRetry(ctx, h.db, authResult.Account.ID, preConsumeCents)
 		_ = AdjustTokenSpentTx(h.db.WithContext(ctx), authResult.Token.ID, -reserveQuotaCents)
 		h.appendBalanceTxn(settleJob{
-			ctx:             trace.ContextWithSpanContext(context.Background(), trace.SpanContextFromContext(ctx)),
+			ctx:             httpx.ContextWithRequestID(trace.ContextWithSpanContext(context.Background(), trace.SpanContextFromContext(ctx)), requestID),
 			accountID:       authResult.Account.ID,
 			tokenID:         authResult.Token.ID,
 			requestID:       requestID,
@@ -388,7 +389,6 @@ func (h *RelayHandler) finalizeAndSettle(ctx context.Context, authResult *AuthRe
 		actualCompletionTokens = usage.CompletionTokens
 		actualCents = CalculateCostCents(usage.PromptTokens, usage.CompletionTokens, model, h.billingCfg.BasePriceCentsPer1K)
 		logger.InfoCtx(ctx, "relay request complete",
-			logger.String("request_id", requestID),
 			logger.Int("prompt_tokens", usage.PromptTokens),
 			logger.Int("completion_tokens", usage.CompletionTokens),
 			logger.Int64("cost_cents", actualCents))
@@ -400,13 +400,13 @@ func (h *RelayHandler) finalizeAndSettle(ctx context.Context, authResult *AuthRe
 			actualCents = h.relayCfg.PreConsumeCents
 		}
 		logger.WarnCtx(ctx, "relay usage fallback charged",
-			logger.String("request_id", requestID),
 			logger.Int64("cost_cents", actualCents))
 	}
 
 	// 结算在请求结束后由 worker 异步执行，请求 ctx 已被服务端取消。
-	// 仅保留链路上下文，避免使用已取消的 ctx 导致事务中止。
+	// 仅保留链路上下文与 request_id，避免使用已取消的 ctx 导致事务中止。
 	jobCtx := trace.ContextWithSpanContext(context.Background(), trace.SpanContextFromContext(ctx))
+	jobCtx = httpx.ContextWithRequestID(jobCtx, requestID)
 
 	job := settleJob{
 		ctx:                    jobCtx,
@@ -427,8 +427,7 @@ func (h *RelayHandler) finalizeAndSettle(ctx context.Context, authResult *AuthRe
 	case h.settleCh <- job:
 	default:
 		// 队列满：同步结算，避免账单丢失（请求已在客户端写入完毕，短暂阻塞可接受）
-		logger.WarnCtx(ctx, "relay settle channel full, settling synchronously",
-			logger.String("request_id", requestID))
+		logger.WarnCtx(ctx, "relay settle channel full, settling synchronously")
 		h.processJob(job)
 	}
 }

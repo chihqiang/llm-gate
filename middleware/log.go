@@ -14,6 +14,7 @@ import (
 	"github.com/chihqiang/infra-go/httpx"
 	"github.com/chihqiang/infra-go/jwt"
 	"github.com/chihqiang/infra-go/logger"
+	"github.com/chihqiang/infra-go/trace"
 )
 
 const (
@@ -154,6 +155,8 @@ func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) ht
 					RequestBrowser: browser,
 					ResponseJSON:   truncateString(respBody, maxRespBodySize),
 					ProcessTime:    duration.Milliseconds(),
+					RequestID:      httpx.RequestIDFromContext(traceCtx),
+					TraceID:        trace.TraceIDFromContext(traceCtx),
 					AccountID:      accountID,
 					AccountName:    accountName,
 				}); err != nil {

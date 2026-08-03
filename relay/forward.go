@@ -75,7 +75,7 @@ func (e *committedError) Error() string { return "response committed: " + e.err.
 // 仅在所有候选都失败或遇到不可重试错误时，才向客户端写入错误响应。
 // 返回 usage（可能为 nil）、是否成功投递响应、错误，以及实际生效的候选（失败时可能为 nil）。
 func (h *RelayHandler) forward(ctx context.Context, w http.ResponseWriter, r *http.Request, kind string,
-	candidates []upstreamCandidate, raw map[string]json.RawMessage, isStream bool, requestID string) (*usageData, bool, error, *upstreamCandidate) {
+	candidates []upstreamCandidate, raw map[string]json.RawMessage, isStream bool) (*usageData, bool, error, *upstreamCandidate) {
 
 	var lastErr error
 	for i := range candidates {
@@ -85,7 +85,7 @@ func (h *RelayHandler) forward(ctx context.Context, w http.ResponseWriter, r *ht
 			lastErr = &upstreamError{status: http.StatusServiceUnavailable,
 				msg: fmt.Sprintf("provider %s circuit open", cand.Provider.Name)}
 			logger.WarnCtx(ctx, "relay: circuit open, skip provider",
-				logger.Int64("provider_id", cand.Provider.ID), logger.String("request_id", requestID))
+				logger.Int64("provider_id", cand.Provider.ID))
 			h.notifier.Send(ctx, fmt.Sprintf("circuit_open_%d", cand.Provider.ID), "上游熔断打开",
 				fmt.Sprintf("服务商 %s 连续失败被熔断，请求自动跳过", cand.Provider.Name))
 			continue
@@ -96,7 +96,7 @@ func (h *RelayHandler) forward(ctx context.Context, w http.ResponseWriter, r *ht
 		if err != nil {
 			breaker.Failure()
 			logger.WarnCtx(ctx, "relay: upstream attempt failed",
-				logger.Err(err), logger.Int64("provider_id", cand.Provider.ID), logger.String("request_id", requestID))
+				logger.Err(err), logger.Int64("provider_id", cand.Provider.ID))
 			h.notifier.Send(ctx, fmt.Sprintf("provider_fail_%d", cand.Provider.ID), "上游故障",
 				fmt.Sprintf("服务商 %s 请求失败：%v", cand.Provider.Name, err))
 			lastErr = err
@@ -118,8 +118,7 @@ func (h *RelayHandler) forward(ctx context.Context, w http.ResponseWriter, r *ht
 		}
 		breaker.Success()
 		logger.InfoCtx(ctx, "relay upstream ok",
-			logger.String("provider", cand.Provider.Name),
-			logger.String("request_id", requestID))
+			logger.String("provider", cand.Provider.Name))
 		return usage, delivered, nil, cand
 	}
 
