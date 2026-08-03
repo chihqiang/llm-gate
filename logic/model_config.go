@@ -1,8 +1,6 @@
 package logic
 
 import (
-	"fmt"
-
 	"chihqiang/llm-gate/cache"
 	"chihqiang/llm-gate/model"
 
@@ -110,6 +108,7 @@ func (s *ModelLogic) Create(req *ModelCreateRequest) (*model.ModelConfig, error)
 	if err := s.db.Create(&mc).Error; err != nil {
 		return nil, err
 	}
+	s.invalidateModelCaches()
 	return &mc, nil
 }
 
@@ -139,16 +138,28 @@ func (s *ModelLogic) Update(req *ModelUpdateRequest) (*model.ModelConfig, error)
 	if err := s.db.Model(&model.ModelConfig{}).Where("id = ?", req.ID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	// 失效模型列表缓存，多节点立即感知变更
-	s.modelListCache.Del(fmt.Sprintf("model_list:%s", req.Name))
-	s.modelListCache.Del(fmt.Sprintf("neg:%s", req.Name))
+	s.invalidateModelCaches()
 	return s.GetByID(req.ID)
 }
 
 func (s *ModelLogic) Delete(id int64) error {
+	var mc model.ModelConfig
+	if err := s.db.Select("name").First(&mc, id).Error; err != nil {
+		// 记录不存在也视为成功，保证幂等
+		if err != gorm.ErrRecordNotFound {
+			return err
+		}
+	}
 	if err := s.db.Delete(&model.ModelConfig{}, id).Error; err != nil {
 		return err
 	}
-	// 注意：无法在此获取模型名称，调用方可根据需要额外失效缓存
+	s.invalidateModelCaches()
 	return nil
+}
+
+// invalidateModelCaches 模型配置变更影响路由与模型列表，失效所有相关缓存。
+func (s *ModelLogic) invalidateModelCaches() {
+	s.modelListCache.FlushByPrefix("model_list:")
+	s.modelListCache.FlushByPrefix("neg:")
+	s.modelListCache.FlushByPrefix("models:")
 }

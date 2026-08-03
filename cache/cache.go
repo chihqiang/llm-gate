@@ -17,4 +17,6 @@ type Cache interface {
 	Set(key string, value any, ttl time.Duration)
 	// Del 删除缓存键。
 	Del(key string)
+	// FlushByPrefix 删除所有以 prefix 开头的缓存键。
+	FlushByPrefix(prefix string)
 }

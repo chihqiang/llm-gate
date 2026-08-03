@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"chihqiang/llm-gate/logic"
 	"chihqiang/llm-gate/relay"
 	"chihqiang/llm-gate/route"
+	"chihqiang/llm-gate/security"
 
 	"github.com/chihqiang/infra-go/conf"
 	"github.com/chihqiang/infra-go/httpx"
@@ -25,13 +27,23 @@ func main() {
 	var cfg config.Config
 	conf.MustLoad("config.yaml", &cfg)
 
-	// 支持通过环境变量覆盖 JWT Secret
+	// 支持通过环境变量覆盖 JWT Secret / 加密密钥
 	if secret := os.Getenv("JWT_SECRET"); secret != "" {
 		cfg.JWT.Secret = secret
+	}
+	if key := os.Getenv("ENCRYPT_KEY"); key != "" {
+		cfg.Security.EncryptKey = key
 	}
 
 	log := logger.New(cfg.Logger)
 	defer log.Sync()
+	logger.SetGlobal(log)
+
+	// 密钥加密器：security.encrypt_key 或 JWT Secret 派生
+	cipher, err := security.New(cfg.Security.EncryptKey, cfg.JWT.Secret)
+	if err != nil {
+		log.Fatalf("加密器初始化失败: %v", err)
+	}
 
 	gormDB, err := orm.New(cfg.DB)
 	if err != nil {
@@ -87,11 +99,12 @@ func main() {
 	menuSvc := logic.NewMenuLogic(gormDB)
 	logSvc := logic.NewLogLogic(gormDB)
 
-	providerSvc := logic.NewProviderLogic(gormDB, providerCache)
+	providerSvc := logic.NewProviderLogic(gormDB, providerCache, cipher)
 	modelSvc := logic.NewModelLogic(gormDB, modelListCache)
-	tokenSvc := logic.NewTokenLogic(gormDB, authCache)
+	tokenSvc := logic.NewTokenLogic(gormDB, authCache, cipher)
 	usageSvc := logic.NewUsageLogic(gormDB)
 	dashboardSvc := logic.NewDashboardLogic(gormDB)
+	billingSvc := logic.NewBillingLogic(gormDB)
 
 	authHandler := handler.NewAuthHandler(authSvc)
 	accountHandler := handler.NewAccountHandler(accountSvc)
@@ -99,18 +112,24 @@ func main() {
 	menuHandler := handler.NewMenuHandler(menuSvc)
 	logHandler := handler.NewLogHandler(logSvc)
 	dashboardHandler := handler.NewDashboardHandler(dashboardSvc)
+	billingHandler := handler.NewBillingHandler(billingSvc)
 
 	providerHandler := handler.NewProviderHandler(providerSvc)
 	modelHandler := handler.NewModelHandler(modelSvc)
 	tokenHandler := handler.NewTokenHandler(tokenSvc)
 	usageHandler := handler.NewUsageHandler(usageSvc)
-	relayHandler := relay.NewRelayHandler(gormDB, cfg.Relay, authCache, providerCache, modelListCache)
+	relayHandler := relay.NewRelayHandler(gormDB, cfg, cipher, authCache, providerCache, modelListCache)
 	defer relayHandler.Stop()
+
+	// 数据保留清理任务
+	retentionCtx, cancelRetention := context.WithCancel(context.Background())
+	defer cancelRetention()
+	logic.NewRetentionCleaner(gormDB, cfg.Retention).Start(retentionCtx)
 
 	server := httpx.NewServer(cfg.Server)
 
 	route.Register(server, j, authSvc, logSvc, cfg,
-		authHandler, accountHandler, roleHandler, menuHandler, logHandler, dashboardHandler,
+		authHandler, accountHandler, roleHandler, menuHandler, logHandler, dashboardHandler, billingHandler,
 		providerHandler, modelHandler, tokenHandler, usageHandler, relayHandler)
 
 	server.PrintRoutes()

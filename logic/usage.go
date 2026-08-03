@@ -79,12 +79,13 @@ type UsageStat struct {
 	ModelName      string `json:"model_name"`
 	TotalTokens    int    `json:"total_tokens"`
 	TotalQuotaCost int64  `json:"total_quota_cost"`
+	TotalCostCents int64  `json:"total_cost_cents"`
 	RequestCount   int64  `json:"request_count"`
 }
 
 func (s *UsageLogic) GetStats(accountID int64, startDate, endDate string) ([]UsageStat, error) {
 	query := s.db.Model(&model.UsageLog{}).
-		Select("model_name, SUM(total_tokens) as total_tokens, SUM(quota_cost) as total_quota_cost, COUNT(*) as request_count").
+		Select("model_name, SUM(total_tokens) as total_tokens, SUM(quota_cost) as total_quota_cost, SUM(cost_cents) as total_cost_cents, COUNT(*) as request_count").
 		Group("model_name")
 
 	if accountID > 0 {

@@ -23,6 +23,7 @@ func Register(server *httpx.Server, j *jwt.JWT,
 	menuHandler *handler.MenuHandler,
 	logHandler *handler.LogHandler,
 	dashboardHandler *handler.DashboardHandler,
+	billingHandler *handler.BillingHandler,
 
 	providerHandler *handler.ProviderHandler,
 	modelHandler *handler.ModelHandler,
@@ -103,6 +104,15 @@ func Register(server *httpx.Server, j *jwt.JWT,
 	})
 
 	auth.AddRoutes([]httpx.Route{
+		{Method: "GET", Path: "/billing/orders", Handler: billingHandler.ListOrders},
+		{Method: "POST", Path: "/billing/orders", Handler: billingHandler.CreateOrder},
+		{Method: "POST", Path: "/billing/orders/{id}/confirm", Handler: billingHandler.ConfirmOrder},
+		{Method: "POST", Path: "/billing/orders/{id}/cancel", Handler: billingHandler.CancelOrder},
+		{Method: "GET", Path: "/billing/transactions", Handler: billingHandler.ListTransactions},
+		{Method: "POST", Path: "/billing/balance/adjust", Handler: billingHandler.AdjustBalance},
+	})
+
+	auth.AddRoutes([]httpx.Route{
 		{Method: "GET", Path: "/llm/providers", Handler: providerHandler.List},
 		{Method: "GET", Path: "/llm/providers/all", Handler: providerHandler.AllList},
 		{Method: "GET", Path: "/llm/providers/{id}", Handler: providerHandler.Detail},
@@ -139,6 +149,7 @@ func Register(server *httpx.Server, j *jwt.JWT,
 	relayGroup := server.Group("/v1")
 	relayGroup.AddRoutes([]httpx.Route{
 		{Method: "POST", Path: "/chat/completions", Handler: relayHandler.ChatCompletions},
+		{Method: "POST", Path: "/embeddings", Handler: relayHandler.Embeddings},
 		{Method: "GET", Path: "/models", Handler: relayHandler.ListModels},
 	})
 }

@@ -57,3 +57,23 @@ func (r *RedisCache) Set(key string, value any, ttl time.Duration) {
 func (r *RedisCache) Del(key string) {
 	_, _ = r.client.Del(context.Background(), key)
 }
+
+// FlushByPrefix 使用 SCAN 游标删除所有以 prefix 开头的键。
+func (r *RedisCache) FlushByPrefix(prefix string) {
+	ctx := context.Background()
+	cursor := uint64(0)
+	for {
+		keys, next, err := r.client.Scan(ctx, cursor, prefix+"*", 100)
+		if err != nil {
+			logger.Error("redis cache: scan failed", logger.String("prefix", prefix), logger.Err(err))
+			return
+		}
+		if len(keys) > 0 {
+			_, _ = r.client.Del(ctx, keys...)
+		}
+		cursor = next
+		if cursor == 0 {
+			return
+		}
+	}
+}

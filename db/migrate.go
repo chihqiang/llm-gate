@@ -17,6 +17,8 @@ func Migrate(db *gorm.DB) error {
 		&model.ModelConfig{},
 		&model.UserToken{},
 		&model.UsageLog{},
+		&model.RechargeOrder{},
+		&model.Transaction{},
 	); err != nil {
 		return err
 	}
@@ -145,6 +147,21 @@ func seed(db *gorm.DB) error {
 		}
 		if err := createChild(llmDir,
 			model.Menu{MenuType: 2, Name: "聊天", Path: "/admin/sys/llm/chat", Component: "admin/sys/llm/chat/page", Icon: "MessageSquare", Sort: 4, APIURL: "", APIMethod: "*", Visible: true, Status: true, Remark: "聊天"},
+		); err != nil {
+			return err
+		}
+
+		billDir := &model.Menu{PID: 0, MenuType: 1, Name: "计费中心", Path: "/admin/billing", Component: "admin/billing/page", Icon: "CreditCard", Sort: 4, APIURL: "", APIMethod: "*", Visible: true, Status: true, Remark: "计费中心目录"}
+		if err := createMenu(billDir); err != nil {
+			return err
+		}
+		if err := createChild(billDir,
+			model.Menu{MenuType: 2, Name: "充值订单", Path: "/admin/billing/orders", Component: "admin/billing/orders/page", Icon: "Receipt", Sort: 1, APIURL: "/api/v1/billing/orders", APIMethod: "GET", Visible: true, Status: true, Remark: "充值订单菜单"},
+			model.Menu{MenuType: 3, Name: "创建充值订单", APIURL: "/api/v1/billing/orders", APIMethod: "POST", Sort: 2, Visible: true, Status: true, Remark: "创建充值订单"},
+			model.Menu{MenuType: 3, Name: "确认充值订单", APIURL: "/api/v1/billing/orders/*/confirm", APIMethod: "POST", Sort: 3, Visible: true, Status: true, Remark: "确认充值订单"},
+			model.Menu{MenuType: 3, Name: "取消充值订单", APIURL: "/api/v1/billing/orders/*/cancel", APIMethod: "POST", Sort: 4, Visible: true, Status: true, Remark: "取消充值订单"},
+			model.Menu{MenuType: 2, Name: "资金流水", Path: "/admin/billing/transactions", Component: "admin/billing/transactions/page", Icon: "ListChecks", Sort: 5, APIURL: "/api/v1/billing/transactions", APIMethod: "GET", Visible: true, Status: true, Remark: "资金流水菜单"},
+			model.Menu{MenuType: 3, Name: "余额调整", APIURL: "/api/v1/billing/balance/adjust", APIMethod: "POST", Sort: 6, Visible: true, Status: true, Remark: "手动调整账户余额"},
 		); err != nil {
 			return err
 		}

@@ -10,6 +10,7 @@ import (
 
 	"chihqiang/llm-gate/cache"
 	"chihqiang/llm-gate/model"
+	"chihqiang/llm-gate/security"
 
 	"github.com/chihqiang/infra-go/logger"
 	"gorm.io/gorm"
@@ -23,10 +24,21 @@ var upstreamClient = &http.Client{
 type ProviderLogic struct {
 	db            *gorm.DB
 	providerCache cache.Cache
+	cipher        *security.Cipher
 }
 
-func NewProviderLogic(db *gorm.DB, providerCache cache.Cache) *ProviderLogic {
-	return &ProviderLogic{db: db, providerCache: providerCache}
+func NewProviderLogic(db *gorm.DB, providerCache cache.Cache, cipher *security.Cipher) *ProviderLogic {
+	return &ProviderLogic{db: db, providerCache: providerCache, cipher: cipher}
+}
+
+// decryptKey 解密服务商 API 密钥，解密失败返回错误。
+func (s *ProviderLogic) decryptKey(encrypted string) (string, error) {
+	key, err := s.cipher.Decrypt(encrypted)
+	if err != nil {
+		logger.Error("provider: decrypt api key failed", logger.Err(err))
+		return "", err
+	}
+	return key, nil
 }
 
 type ProviderListRequest struct {
@@ -86,10 +98,14 @@ type ProviderCreateRequest struct {
 }
 
 func (s *ProviderLogic) Create(req *ProviderCreateRequest) (*model.Provider, error) {
+	encrypted, err := s.cipher.Encrypt(req.APIKey)
+	if err != nil {
+		return nil, err
+	}
 	provider := model.Provider{
 		Name:     req.Name,
 		BaseURL:  req.BaseURL,
-		APIKey:   req.APIKey,
+		APIKey:   encrypted,
 		Status:   req.Status,
 		Priority: req.Priority,
 		Weight:   req.Weight,
@@ -98,6 +114,7 @@ func (s *ProviderLogic) Create(req *ProviderCreateRequest) (*model.Provider, err
 	if err := s.db.Create(&provider).Error; err != nil {
 		return nil, err
 	}
+	s.invalidateRoutingCaches()
 	return &provider, nil
 }
 
@@ -122,13 +139,18 @@ func (s *ProviderLogic) Update(req *ProviderUpdateRequest) (*model.Provider, err
 		"remark":   req.Remark,
 	}
 	if req.APIKey != "" {
-		updates["api_key"] = req.APIKey
+		encrypted, err := s.cipher.Encrypt(req.APIKey)
+		if err != nil {
+			return nil, err
+		}
+		updates["api_key"] = encrypted
 	}
 
 	if err := s.db.Model(&model.Provider{}).Where("id = ?", req.ID).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	s.providerCache.Del(fmt.Sprintf("provider:%d", req.ID))
+	s.invalidateRoutingCaches()
 	return s.GetByID(req.ID)
 }
 
@@ -137,7 +159,16 @@ func (s *ProviderLogic) Delete(id int64) error {
 		return err
 	}
 	s.providerCache.Del(fmt.Sprintf("provider:%d", id))
+	s.invalidateRoutingCaches()
 	return nil
+}
+
+// invalidateRoutingCaches 服务商变更影响模型路由，失效所有路由相关缓存。
+func (s *ProviderLogic) invalidateRoutingCaches() {
+	s.providerCache.FlushByPrefix("provider:")
+	s.providerCache.FlushByPrefix("model_list:")
+	s.providerCache.FlushByPrefix("neg:")
+	s.providerCache.FlushByPrefix("models:")
 }
 
 type UpstreamModel struct {
@@ -167,11 +198,16 @@ func (s *ProviderLogic) fetchUpstreamModels(providerID int64) ([]upstreamModelDT
 		return nil, fmt.Errorf("provider not found: %w", err)
 	}
 
+	key, err := s.decryptKey(provider.APIKey)
+	if err != nil {
+		return nil, err
+	}
+
 	req, err := http.NewRequest("GET", strings.TrimRight(provider.BaseURL, "/")+"/v1/models", nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := upstreamClient.Do(req)

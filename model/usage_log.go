@@ -11,7 +11,9 @@ type UsageLog struct {
 	PromptTokens     int       `json:"prompt_tokens" gorm:"comment:提示令牌数"`
 	CompletionTokens int       `json:"completion_tokens" gorm:"comment:补全令牌数"`
 	TotalTokens      int       `json:"total_tokens" gorm:"comment:总令牌数"`
-	QuotaCost        int64     `json:"quota_cost" gorm:"comment:额度消耗"`
+	QuotaCost        int64     `json:"quota_cost" gorm:"comment:额度消耗（兼容旧字段）"`
+	CostCents        int64     `json:"cost_cents" gorm:"comment:实际扣费（分）"`
+	Estimated        bool      `json:"estimated" gorm:"default:false;comment:是否估算计费（流式未返回usage）"`
 	RequestID        string    `json:"request_id" gorm:"size:64;index;comment:请求ID"`
 	CreatedAt        time.Time `json:"created_at" gorm:"index:idx_usage_account_created,priority:2;index:idx_usage_model_created,priority:2;comment:创建时间"`
 }

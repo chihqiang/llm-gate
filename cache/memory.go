@@ -46,3 +46,12 @@ func (m *MemoryCache) Set(key string, value any, ttl time.Duration) {
 func (m *MemoryCache) Del(key string) {
 	m.c.Delete(key)
 }
+
+// FlushByPrefix 遍历并删除所有以 prefix 开头的键。
+func (m *MemoryCache) FlushByPrefix(prefix string) {
+	for k := range m.c.Items() {
+		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
+			m.c.Delete(k)
+		}
+	}
+}
