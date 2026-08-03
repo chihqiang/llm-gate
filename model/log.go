@@ -13,7 +13,7 @@ type Log struct {
 	RequestBrowser string    `json:"request_browser" gorm:"size:256;comment:浏览器"`
 	ResponseJSON   string    `json:"response_json" gorm:"type:text;comment:响应内容"`
 	ProcessTime    int64     `json:"process_time" gorm:"comment:处理耗时(ms)"`
-	RequestID      string    `json:"request_id" gorm:"size:64;comment:请求ID"`
+	RequestID      string    `json:"request_id" gorm:"size:64;index;comment:请求ID"`
 	TraceID        string    `json:"trace_id" gorm:"size:64;comment:链路追踪ID"`
 	AccountID      int64     `json:"account_id" gorm:"comment:操作人ID"`
 	AccountName    string    `json:"account_name" gorm:"size:64;comment:操作人名称"`

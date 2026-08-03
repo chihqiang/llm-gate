@@ -1,11 +1,13 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/chihqiang/infra-go/httpx"
 	"github.com/chihqiang/infra-go/trace"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type traceRecorder struct {
@@ -37,6 +39,10 @@ func Trace() httpx.Middleware {
 			next(rw, r.WithContext(ctx))
 
 			span.SetAttributes(trace.AttrInt("http.status_code", rw.status))
+			if rw.status >= 500 {
+				span.SetStatus(codes.Error, http.StatusText(rw.status))
+				span.RecordError(fmt.Errorf("http status %d", rw.status))
+			}
 		}
 	}
 }

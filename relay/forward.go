@@ -16,6 +16,7 @@ import (
 
 	"github.com/chihqiang/infra-go/logger"
 	"github.com/chihqiang/infra-go/trace"
+	"go.opentelemetry.io/otel/codes"
 )
 
 const (
@@ -180,6 +181,8 @@ func (h *RelayHandler) attempt(ctx context.Context, w http.ResponseWriter, r *ht
 		last, err = run()
 	}
 	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		span.RecordError(err)
 		return nil, false, err
 	}
 
@@ -189,6 +192,8 @@ func (h *RelayHandler) attempt(ctx context.Context, w http.ResponseWriter, r *ht
 		usage, delivered, serr := proxyStreamWithUsage(w, ctx, last.stream)
 		if serr != nil {
 			// 响应头已写入，客户端可能已收到部分内容：标记为已提交错误，仅影响熔断统计与结算
+			span.SetStatus(codes.Error, serr.Error())
+			span.RecordError(serr)
 			return usage, delivered, &committedError{err: serr}
 		}
 		return usage, delivered, nil

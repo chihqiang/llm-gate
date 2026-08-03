@@ -24,6 +24,7 @@ import (
 	"github.com/chihqiang/infra-go/ratelimit"
 	"github.com/chihqiang/infra-go/syncx"
 	"github.com/chihqiang/infra-go/trace"
+	"go.opentelemetry.io/otel/codes"
 	"gorm.io/gorm"
 )
 
@@ -361,6 +362,8 @@ func (h *RelayHandler) relay(w http.ResponseWriter, r *http.Request, kind string
 
 	usage, delivered, forwardErr, winner := h.forward(ctx, w, r, kind, resolveResult.Candidates, raw, isStream)
 	if forwardErr != nil {
+		span.SetStatus(codes.Error, forwardErr.Error())
+		span.RecordError(forwardErr)
 		logger.WarnCtx(ctx, "relay forward failed",
 			logger.Err(forwardErr))
 		// 已提交响应（流式中断）：上游可能已产出内容，按 usage/投递情况结算，不退款

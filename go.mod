@@ -5,6 +5,7 @@ go 1.25.11
 require (
 	github.com/chihqiang/infra-go v0.0.0-20260731150112-d0a1ff6feaa4
 	github.com/patrickmn/go-cache v2.1.0+incompatible
+	go.opentelemetry.io/otel v1.44.0
 	gorm.io/gorm v1.31.2
 )
 
@@ -35,7 +36,6 @@ require (
 	github.com/openzipkin/zipkin-go v0.4.3 // indirect
 	github.com/redis/go-redis/v9 v9.21.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.44.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.44.0 // indirect
