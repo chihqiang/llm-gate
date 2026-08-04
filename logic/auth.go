@@ -12,6 +12,7 @@ import (
 	"github.com/chihqiang/infra-go/hash"
 	"github.com/chihqiang/infra-go/jwt"
 	"github.com/chihqiang/infra-go/logger"
+	"github.com/chihqiang/infra-go/syncx"
 	"gorm.io/gorm"
 )
 
@@ -19,6 +20,8 @@ type AuthLogic struct {
 	db           *gorm.DB
 	j            *jwt.JWT
 	accountCache cache.Cache
+	// singleFlight 防止缓存击穿：相同 key 的并发 miss 只穿透 DB 一次
+	singleFlight *syncx.SingleFlight[*model.Account]
 }
 
 func NewAuthLogic(db *gorm.DB, j *jwt.JWT, accountCache cache.Cache) *AuthLogic {
@@ -26,6 +29,7 @@ func NewAuthLogic(db *gorm.DB, j *jwt.JWT, accountCache cache.Cache) *AuthLogic 
 		db:           db,
 		j:            j,
 		accountCache: accountCache,
+		singleFlight: syncx.NewSingleFlight[*model.Account](),
 	}
 }
 
@@ -165,16 +169,30 @@ func (s *AuthLogic) GetAccountByID(ctx context.Context, accountID int64) (*model
 	if ok, _ := s.accountCache.GetInto(ctx, cacheKey, &account); ok {
 		return &account, nil
 	}
-	logger.InfoCtx(ctx, "auth account cache miss", logger.Int64("account_id", accountID))
 
-	if err := s.db.WithContext(ctx).Preload("Roles", func(db *gorm.DB) *gorm.DB {
-		return db.Where("status = ?", true)
-	}).Preload("Roles.Menus", func(db *gorm.DB) *gorm.DB {
-		return db.Where("status = ?", true)
-	}).First(&account, accountID).Error; err != nil {
+	// 使用 singleflight 防止缓存击穿：相同 key 的并发 miss 只穿透 DB 一次，
+	// 其余请求共享结果。fn 内二次检查缓存，避免等待期间已被其他请求回填。
+	acc, err := s.singleFlight.DoCtx(ctx, cacheKey, func(ctx context.Context) (*model.Account, error) {
+		var a model.Account
+		if ok, _ := s.accountCache.GetInto(ctx, cacheKey, &a); ok {
+			return &a, nil
+		}
+
+		logger.InfoCtx(ctx, "auth account cache miss", logger.Int64("account_id", accountID))
+
+		if err := s.db.WithContext(ctx).Preload("Roles", func(db *gorm.DB) *gorm.DB {
+			return db.Where("status = ?", true)
+		}).Preload("Roles.Menus", func(db *gorm.DB) *gorm.DB {
+			return db.Where("status = ?", true)
+		}).First(&a, accountID).Error; err != nil {
+			return nil, err
+		}
+
+		s.accountCache.Set(ctx, cacheKey, &a, 10*time.Second)
+		return &a, nil
+	})
+	if err != nil {
 		return nil, err
 	}
-
-	s.accountCache.Set(ctx, cacheKey, &account, 10*time.Second)
-	return &account, nil
+	return acc, nil
 }

@@ -1,88 +1,171 @@
+# ============================================================
+# llm-gate 配置文件
+# ============================================================
+# 本文件为 YAML 格式，使用空格缩进（不要用 Tab）。
+# 支持通过环境变量覆盖部分密钥：JWT_SECRET、ENCRYPT_KEY。
+# 金额单位均为「分」（1 元 = 100 分）。
+# ============================================================
+
+# ---------- 应用基础信息 ----------
 app:
+  # 应用名称（仅用于日志与展示）
   name: llm-gate
+  # 应用版本号
   version: 0.0.1
+  # 内置管理员角色 ID，用于识别超级管理员（拥有全部权限，绕过菜单权限校验）
   admin_role_id: 1
 
+# ---------- HTTP 服务监听配置 ----------
 server:
+  # 监听地址，0.0.0.0 表示监听所有网卡（Docker 内必须为此值）
   host: 0.0.0.0
+  # 监听端口
   port: 8080
 
+# ---------- 数据库配置 ----------
 db:
+  # 数据库驱动：sqlite | mysql | postgres
   driver: sqlite
+  # sqlite: 数据库文件路径；mysql/postgres: 形如 "user:pass@tcp(host:port)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
   database: ./data.db
 
+# ---------- JWT 令牌配置（管理端认证） ----------
 jwt:
+  # JWT 签名密钥，生产环境务必修改为强随机字符串
+  # 也可通过环境变量 JWT_SECRET 覆盖
   secret: llm-gate-secret-key
+  # 签发者标识
   issuer: llm-gate
+  # 访问令牌有效期（2h = 2 小时）
   access_token_expire: 2h
+  # 刷新令牌有效期（168h = 7 天）
   refresh_token_expire: 168h
+  # 签名算法：HS256 | HS384 | HS512
   algorithm: HS256
 
+# ---------- LLM 转发（relay）配置 ----------
 relay:
+  # 转发上游请求的超时时间（秒），超时后返回错误
   timeout: 120
+  # 最大请求体大小（MB），超过则拒绝
   max_body_mb: 32
+  # 单次请求预扣金额（分）。请求开始时先预扣，结束后按实际用量多退少补，
+  # 防止用户在单次请求中消耗远大于余额的金额。
   pre_consume_cents: 100
+  # 流式响应兜底扣费（分）：流式结束但未返回 usage 时按此金额结算
   stream_fallback_cents: 100
+
+  # ---- 限流配置（令牌桶算法）----
   rate_limit:
+    # 是否启用限流（启用后按 rate/burst 对每个 Token 限流）
     enabled: true
+    # 令牌补充速率（个/秒）
     rate: 10
+    # 桶容量（允许的突发请求数）
     burst: 20
+    # 全局速率限制（所有请求共享），<=0 表示不启用
     global_rate: 0
+    # 全局突发容量
     global_burst: 0
+    # 单账户速率限制，<=0 表示不启用
     account_rate: 0
+    # 单账户突发容量
     account_burst: 0
+
+  # ---- 非流式失败重试配置 ----
   upstream:
+    # 是否启用失败重试（仅非流式请求；流式不重试）
     retry_enabled: true
+    # 最大重试次数
     max_retries: 2
+    # 每次重试的间隔（毫秒）
     retry_delay_ms: 200
+
+  # ---- 多服务商故障转移 / 熔断降级 ----
   failover:
+    # 是否启用：同一模型配置多个服务商时，上游连续失败自动切换到下一个可用服务商
     enabled: true
+    # 统计窗口内连续失败达到该阈值时触发熔断
     failure_threshold: 5
+    # 失败统计窗口（60s = 60 秒）
     window: 60s
+    # 熔断持续时长，到期后自动尝试恢复
     cooldown: 30s
+    # 是否周期性探测上游 /models 健康状态（健康的上游会被优先选择）
     health_probe_enabled: true
+    # 健康探测间隔
     health_probe_interval: 30s
 
+# ---------- 计费配置 ----------
 billing:
+  # 每千 token 基础单价（分）。
+  # 单次请求费用 = (prompt_tokens/1000*倍率 + completion_tokens/1000*倍率*补全倍率) * 基础单价
   base_price_cents_per_1k: 2
+  # 余额低于该值（分）时触发余额不足告警
   min_balance_cents: 1000
 
+# ---------- 安全配置 ----------
 security:
-  # AES-256 加密密钥，64 位十六进制（32 字节）；未配置时回退到 JWT Secret 派生，生产环境必须配置
+  # AES-256 加密密钥，64 位十六进制字符（对应 32 字节），用于服务商 API Key / Token 密钥的加密存储。
+  # 未配置时回退到由 JWT Secret 派生（生产环境强烈建议配置独立密钥）。
+  # 也可通过环境变量 ENCRYPT_KEY 覆盖。生成示例：openssl rand -hex 32
   encrypt_key: ""
+  # 是否记录密钥查看（reveal）操作到审计日志
   reveal_audit: true
 
+# ---------- 数据保留与清理 ----------
 retention:
+  # 用量日志保留天数，<=0 表示不清理
   usage_days: 0
+  # 资金流水保留天数，<=0 表示不清理
   transaction_days: 0
+  # 已过期 Token 额外宽限天数（距过期时间），到期后自动清理，<=0 表示不清理
   expired_token_grace_days: 0
+  # 清理任务检查间隔
   check_interval: 24h
 
+# ---------- Webhook 告警通知 ----------
 alert:
+  # 是否启用 webhook 告警（余额不足、熔断等事件）
   enabled: false
+  # 告警回调地址（POST JSON 请求）
   webhook_url: ""
+  # 签名密钥：使用 HMAC-SHA256 对请求体签名并放入 X-Signature 头，留空表示不签名
   sign_secret: ""
+  # 同类告警最小发送间隔，防止告警轰炸
   cooldown: 10m
 
+# ---------- 跨域配置（CORS） ----------
 cors:
+  # 允许的来源列表，"*" 表示允许所有来源。生产环境建议配置为具体域名，如：
+  #   - "https://admin.example.com"
   allow_origins:
     - "*"
 
+# ---------- pprof 性能分析 ----------
 pprof:
+  # 是否启用 pprof 调试端点（生产环境建议关闭）
   enabled: true
 
-# Redis 缓存（可选，多节点部署时配置）
+# ---------- Redis 缓存（可选） ----------
+# 配置 Redis 后，缓存（Token 认证 / 服务商 / 模型列表 / 账户）存储在 Redis，
+# 适用于多节点水平扩展部署；留空则使用进程内内存缓存（单机模式）。
 # redis:
-#   addr: "127.0.0.1:6379"
-#   password: ""
-#   db: 0
-#   pool_size: 10
-#   min_idle_conns: 2
-#   key_prefix: "llm-gate"
+#   addr: "127.0.0.1:6379"   # Redis 地址（host:port）
+#   password: ""             # 认证密码，无则留空
+#   db: 0                    # 使用的逻辑库编号
+#   pool_size: 10            # 连接池大小
+#   min_idle_conns: 2        # 最小空闲连接数
+#   key_prefix: "llm-gate"   # 键前缀，避免多应用共用 Redis 时冲突
 
+# ---------- 日志配置 ----------
 logger:
+  # 日志级别：-1=Debug, 0=Info, 1=Warn, 2=Error
   level: 0
+  # 日志编码格式：json | console
   encoding: json
+  # 输出目标：stdout（标准输出）或文件路径
   output:
     - stdout
+  # 是否在日志中输出调用位置（文件名:行号）
   caller: true
