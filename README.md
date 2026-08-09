@@ -53,8 +53,8 @@ pnpm dev
 ### Docker 部署
 
 ```bash
-docker build -t llm-gate .
-docker run --rm -p 8080:80 llm-gate
+docker build -t zhiqiangwang/app:llm-gate .
+docker run --rm -p 8080:80 zhiqiangwang/app:llm-gate
 ```
 
 ### 默认账号
@@ -226,7 +226,7 @@ docker run --rm -p 8080:80 llm-gate
 
 真实货币计费，单位分（1 元 = 100 分）：
 
-```
+```txt
 单次费用 = (prompt/1000×ratio + completion/1000×ratio×completion_ratio) × base_price_cents_per_1k
 ```
 
@@ -259,7 +259,7 @@ docker run --rm -p 8080:80 llm-gate
 
 ## 项目结构
 
-```
+```txt
 ├── main.go                   # 入口
 ├── config.yaml               # 配置文件
 ├── Dockerfile                # 多阶段构建
@@ -313,6 +313,7 @@ docker run --rm -p 8080:80 llm-gate
 | runtime | node:22-alpine | 聚合所有产物 + nginx + supervisord |
 
 镜像包含 3 个进程（supervisord 管理）：
+
 - `gate` — Go 后端
 - `nextjs` — Next.js 服务（Node）
 - `nginx` — 反向代理
