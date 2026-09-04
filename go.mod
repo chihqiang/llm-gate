@@ -3,7 +3,7 @@ module chihqiang/llm-gate
 go 1.25.11
 
 require (
-	github.com/chihqiang/infra-go v0.0.0-20260807101611-4bce5382dee1
+	github.com/chihqiang/infra-go v0.0.0-20260903144851-7aaf32cd3a63
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	go.opentelemetry.io/otel v1.44.0
 	gorm.io/gorm v1.31.2

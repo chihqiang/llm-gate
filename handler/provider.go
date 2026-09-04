@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 
 	"chihqiang/llm-gate/logic"
 
@@ -46,8 +45,8 @@ func (h *ProviderHandler) AllList(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProviderHandler) Detail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := httpx.PathValue[int64](r, "id")
+	if id <= 0 {
 		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
@@ -79,8 +78,8 @@ func (h *ProviderHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProviderHandler) Update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := httpx.PathValue[int64](r, "id")
+	if id <= 0 {
 		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
@@ -102,8 +101,8 @@ func (h *ProviderHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProviderHandler) PreviewSyncModels(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := httpx.PathValue[int64](r, "id")
+	if id <= 0 {
 		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
@@ -119,8 +118,8 @@ func (h *ProviderHandler) PreviewSyncModels(w http.ResponseWriter, r *http.Reque
 
 func (h *ProviderHandler) SyncModels(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := httpx.PathValue[int64](r, "id")
+	if id <= 0 {
 		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
@@ -141,8 +140,8 @@ func (h *ProviderHandler) SyncModels(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProviderHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := httpx.PathValue[int64](r, "id")
+	if id <= 0 {
 		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}

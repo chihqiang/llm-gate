@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 
 	"chihqiang/llm-gate/logic"
 	"chihqiang/llm-gate/middleware"
@@ -41,8 +40,8 @@ func (h *TokenHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *TokenHandler) Detail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := httpx.PathValue[int64](r, "id")
+	if id <= 0 {
 		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
@@ -74,8 +73,8 @@ func (h *TokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *TokenHandler) Update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := httpx.PathValue[int64](r, "id")
+	if id <= 0 {
 		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
@@ -97,8 +96,8 @@ func (h *TokenHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *TokenHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := httpx.PathValue[int64](r, "id")
+	if id <= 0 {
 		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
@@ -113,8 +112,8 @@ func (h *TokenHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 func (h *TokenHandler) Reveal(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := httpx.PathValue[int64](r, "id")
+	if id <= 0 {
 		httpx.WriteHTTPErrorCtx(ctx, w, httpx.CodeBadRequest, "无效的ID")
 		return
 	}
