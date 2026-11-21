@@ -1,12 +1,12 @@
 package handler
 
 import (
+	"github.com/chihqiang/ten-go/core/cast"
 	"net/http"
-	"strconv"
 
 	"chihqiang/llm-gate/logic"
 
-	"github.com/chihqiang/infra-go/httpx"
+	"github.com/chihqiang/ten-go/rest"
 )
 
 type MenuHandler struct {
@@ -18,93 +18,102 @@ func NewMenuHandler(svc *logic.MenuLogic) *MenuHandler {
 }
 
 func (h *MenuHandler) List(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.MenuListRequest
-	if err := httpx.MustBindQuery(w, r, &req); err != nil {
+	if err := rest.BindQuery(r, &req); err != nil {
+		_ = rest.ErrorJSONCtx(r.Context(), w, rest.NewCodeError(rest.StatusOf(err), err.Error()))
 		return
 	}
 
-	resp, err := h.svc.List(&req)
+	resp, err := h.svc.List(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		rest.OkJSONCtx(ctx, w, rest.NewCodeError(rest.BusinessCodeError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, resp)
+	rest.OkJSONCtx(ctx, w, resp)
 }
 
 func (h *MenuHandler) AllList(w http.ResponseWriter, r *http.Request) {
-	menus, err := h.svc.AllList()
+	ctx := r.Context()
+	menus, err := h.svc.AllList(ctx)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		rest.OkJSONCtx(ctx, w, rest.NewCodeError(rest.BusinessCodeError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, menus)
+	rest.OkJSONCtx(ctx, w, menus)
 }
 
 func (h *MenuHandler) Detail(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+	ctx := r.Context()
+	id := cast.To[int64](rest.PathParam(r, "id"))
+	if id <= 0 {
+		rest.ErrorJSONCtx(ctx, w, rest.NewCodeError(http.StatusBadRequest, "无效的ID"))
 		return
 	}
 
-	menu, err := h.svc.GetByID(id)
+	menu, err := h.svc.GetByID(ctx, id)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		rest.OkJSONCtx(ctx, w, rest.NewCodeError(rest.BusinessCodeError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, menu)
+	rest.OkJSONCtx(ctx, w, menu)
 }
 
 func (h *MenuHandler) Create(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.MenuCreateRequest
-	if err := httpx.MustBindJSON(w, r, &req); err != nil {
+	if err := rest.Bind(r, &req); err != nil {
+		_ = rest.ErrorJSONCtx(r.Context(), w, rest.NewCodeError(rest.StatusOf(err), err.Error()))
 		return
 	}
 
-	menu, err := h.svc.Create(&req)
+	menu, err := h.svc.Create(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		rest.OkJSONCtx(ctx, w, rest.NewCodeError(rest.BusinessCodeError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, menu)
+	rest.OkJSONCtx(ctx, w, menu)
 }
 
 func (h *MenuHandler) Update(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+	ctx := r.Context()
+	id := cast.To[int64](rest.PathParam(r, "id"))
+	if id <= 0 {
+		rest.ErrorJSONCtx(ctx, w, rest.NewCodeError(http.StatusBadRequest, "无效的ID"))
 		return
 	}
 
 	var req logic.MenuUpdateRequest
-	if err := httpx.MustBindJSON(w, r, &req); err != nil {
+	if err := rest.Bind(r, &req); err != nil {
+		_ = rest.ErrorJSONCtx(r.Context(), w, rest.NewCodeError(rest.StatusOf(err), err.Error()))
 		return
 	}
 
-	menu, err := h.svc.Update(id, &req)
+	menu, err := h.svc.Update(ctx, id, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		rest.OkJSONCtx(ctx, w, rest.NewCodeError(rest.BusinessCodeError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, menu)
+	rest.OkJSONCtx(ctx, w, menu)
 }
 
 func (h *MenuHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		httpx.WriteHTTPError(w, httpx.CodeBadRequest, "无效的ID")
+	ctx := r.Context()
+	id := cast.To[int64](rest.PathParam(r, "id"))
+	if id <= 0 {
+		rest.ErrorJSONCtx(ctx, w, rest.NewCodeError(http.StatusBadRequest, "无效的ID"))
 		return
 	}
 
-	if err := h.svc.Delete(id); err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+	if err := h.svc.Delete(ctx, id); err != nil {
+		rest.OkJSONCtx(ctx, w, rest.NewCodeError(rest.BusinessCodeError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, nil)
+	rest.OkJSONCtx(ctx, w, nil)
 }

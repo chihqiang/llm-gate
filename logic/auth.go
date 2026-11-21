@@ -1,22 +1,35 @@
 package logic
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"time"
 
+	"chihqiang/llm-gate/cache"
 	"chihqiang/llm-gate/model"
 
-	"github.com/chihqiang/infra-go/hash"
-	"github.com/chihqiang/infra-go/jwt"
+	"github.com/chihqiang/ten-go/core/hash"
+	"github.com/chihqiang/ten-go/core/logger"
+	"github.com/chihqiang/ten-go/core/syncx"
 	"gorm.io/gorm"
 )
 
 type AuthLogic struct {
-	db *gorm.DB
-	j  *jwt.JWT
+	db           *gorm.DB
+	tokens       *TokenManager
+	accountCache cache.Cache
+	// singleFlight 防止缓存击穿：相同 key 的并发 miss 只穿透 DB 一次
+	singleFlight *syncx.SingleFlight[*model.Account]
 }
 
-func NewAuthLogic(db *gorm.DB, j *jwt.JWT) *AuthLogic {
-	return &AuthLogic{db: db, j: j}
+func NewAuthLogic(db *gorm.DB, tokens *TokenManager, accountCache cache.Cache) *AuthLogic {
+	return &AuthLogic{
+		db:           db,
+		tokens:       tokens,
+		accountCache: accountCache,
+		singleFlight: syncx.NewSingleFlight[*model.Account](),
+	}
 }
 
 type LoginRequest struct {
@@ -32,35 +45,69 @@ type LoginResponse struct {
 	RefreshToken string `json:"refresh_token,omitempty"`
 }
 
-func (s *AuthLogic) Login(req *LoginRequest) (*LoginResponse, error) {
+func (s *AuthLogic) Login(ctx context.Context, req *LoginRequest) (*LoginResponse, error) {
 	var account model.Account
-	if err := s.db.Where("email = ?", req.Email).First(&account).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("email = ?", req.Email).First(&account).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.WarnCtx(ctx, "auth login failed: email not found", logger.String("email", req.Email))
 			return nil, errors.New("邮箱或密码错误")
 		}
 		return nil, err
 	}
 
 	if !account.Status {
+		logger.WarnCtx(ctx, "auth login failed: account disabled", logger.Int64("account_id", account.ID))
 		return nil, errors.New("账号已被禁用")
 	}
 
 	if err := hash.BcryptCompare(account.Password, req.Password); err != nil {
+		logger.WarnCtx(ctx, "auth login failed: wrong password", logger.Int64("account_id", account.ID))
 		return nil, errors.New("邮箱或密码错误")
 	}
 
-	claims := jwt.Claims{
-		jwt.ClaimKeyUserID:   account.ID,
-		jwt.ClaimKeyUsername: account.Email,
+	claims := Claims{
+		ClaimKeyUserID:   account.ID,
+		ClaimKeyUsername: account.Email,
 	}
 
-	tokenPair, err := s.j.GenerateTokenPair(claims)
+	tokenPair, err := s.tokens.GenerateTokenPair(claims)
 	if err != nil {
 		return nil, err
 	}
 
+	logger.InfoCtx(ctx, "auth login ok", logger.Int64("account_id", account.ID), logger.String("email", account.Email))
 	return &LoginResponse{
 		ID:           account.ID,
+		AccessToken:  tokenPair.AccessToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    tokenPair.ExpiresAt,
+		RefreshToken: tokenPair.RefreshToken,
+	}, nil
+}
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+func (s *AuthLogic) Refresh(ctx context.Context, req *RefreshRequest) (*LoginResponse, error) {
+	tokenPair, err := s.tokens.RefreshToken(req.RefreshToken)
+	if err != nil {
+		return nil, errors.New("刷新令牌无效或已过期")
+	}
+
+	// 从刷新令牌中提取用户 ID
+	claims, err := s.tokens.ParseRefreshToken(req.RefreshToken)
+	if err != nil {
+		return nil, errors.New("刷新令牌无效或已过期")
+	}
+
+	userID, ok := claims[ClaimKeyUserID].(float64)
+	if !ok {
+		return nil, errors.New("刷新令牌无效")
+	}
+
+	return &LoginResponse{
+		ID:           int64(userID),
 		AccessToken:  tokenPair.AccessToken,
 		TokenType:    "Bearer",
 		ExpiresIn:    tokenPair.ExpiresAt,
@@ -76,23 +123,32 @@ type ProfileResponse struct {
 	Menus  []model.Menu `json:"menus"`
 }
 
-func (s *AuthLogic) GetProfile(accountID int64) (*ProfileResponse, error) {
+func (s *AuthLogic) GetProfile(ctx context.Context, accountID int64, isAdmin bool) (*ProfileResponse, error) {
 	var account model.Account
-	if err := s.db.Preload("Roles", func(db *gorm.DB) *gorm.DB {
-		return db.Where("status = ?", true)
-	}).Preload("Roles.Menus", func(db *gorm.DB) *gorm.DB {
+	if err := s.db.WithContext(ctx).Preload("Roles", func(db *gorm.DB) *gorm.DB {
 		return db.Where("status = ?", true)
 	}).First(&account, accountID).Error; err != nil {
 		return nil, err
 	}
 
-	seen := make(map[int64]bool)
 	var menus []model.Menu
-	for _, role := range account.Roles {
-		for _, menu := range role.Menus {
-			if !seen[menu.ID] {
-				seen[menu.ID] = true
-				menus = append(menus, menu)
+	if isAdmin {
+		if err := s.db.WithContext(ctx).Where("status = ?", true).Order("sort ASC").Find(&menus).Error; err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.db.WithContext(ctx).Preload("Roles.Menus", func(db *gorm.DB) *gorm.DB {
+			return db.Where("status = ?", true)
+		}).First(&account, accountID).Error; err != nil {
+			return nil, err
+		}
+		seen := make(map[int64]bool)
+		for _, role := range account.Roles {
+			for _, menu := range role.Menus {
+				if !seen[menu.ID] {
+					seen[menu.ID] = true
+					menus = append(menus, menu)
+				}
 			}
 		}
 	}
@@ -106,14 +162,36 @@ func (s *AuthLogic) GetProfile(accountID int64) (*ProfileResponse, error) {
 	}, nil
 }
 
-func (s *AuthLogic) GetAccountByID(accountID int64) (*model.Account, error) {
+func (s *AuthLogic) GetAccountByID(ctx context.Context, accountID int64) (*model.Account, error) {
+	cacheKey := fmt.Sprintf("account:%d", accountID)
 	var account model.Account
-	if err := s.db.Preload("Roles", func(db *gorm.DB) *gorm.DB {
-		return db.Where("status = ?", true)
-	}).Preload("Roles.Menus", func(db *gorm.DB) *gorm.DB {
-		return db.Where("status = ?", true)
-	}).First(&account, accountID).Error; err != nil {
+	if ok, _ := s.accountCache.GetInto(ctx, cacheKey, &account); ok {
+		return &account, nil
+	}
+
+	// 使用 singleflight 防止缓存击穿：相同 key 的并发 miss 只穿透 DB 一次，
+	// 其余请求共享结果。fn 内二次检查缓存，避免等待期间已被其他请求回填。
+	acc, err := s.singleFlight.DoCtx(ctx, cacheKey, func(ctx context.Context) (*model.Account, error) {
+		var a model.Account
+		if ok, _ := s.accountCache.GetInto(ctx, cacheKey, &a); ok {
+			return &a, nil
+		}
+
+		logger.InfoCtx(ctx, "auth account cache miss", logger.Int64("account_id", accountID))
+
+		if err := s.db.WithContext(ctx).Preload("Roles", func(db *gorm.DB) *gorm.DB {
+			return db.Where("status = ?", true)
+		}).Preload("Roles.Menus", func(db *gorm.DB) *gorm.DB {
+			return db.Where("status = ?", true)
+		}).First(&a, accountID).Error; err != nil {
+			return nil, err
+		}
+
+		s.accountCache.Set(ctx, cacheKey, &a, 10*time.Second)
+		return &a, nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	return &account, nil
+	return acc, nil
 }

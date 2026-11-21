@@ -1,6 +1,8 @@
 package logic
 
 import (
+	"context"
+
 	"chihqiang/llm-gate/model"
 
 	"gorm.io/gorm"
@@ -15,11 +17,13 @@ func NewLogLogic(db *gorm.DB) *LogLogic {
 }
 
 type LogListRequest struct {
-	Page          int    `form:"page" binding:"required,min=1"`
-	Size          int    `form:"size" binding:"required,min=1,max=100"`
-	RequestPath   string `form:"request_path"`
-	RequestIP     string `form:"request_ip"`
-	RequestMethod string `form:"request_method"`
+	Page             int    `form:"page" binding:"required,min=1"`
+	Size             int    `form:"size" binding:"required,min=1,max=1000"`
+	RequestPath      string `form:"request_path"`
+	RequestIP        string `form:"request_ip"`
+	RequestMethod    string `form:"request_method"`
+	RequestID        string `form:"request_id"`
+	CurrentAccountID int64  `form:"-"`
 }
 
 type LogListResponse struct {
@@ -27,11 +31,14 @@ type LogListResponse struct {
 	Total int64       `json:"total"`
 }
 
-func (s *LogLogic) List(req *LogListRequest) (*LogListResponse, error) {
+func (s *LogLogic) List(ctx context.Context, req *LogListRequest) (*LogListResponse, error) {
 	var logs []model.Log
 	var total int64
 
-	query := s.db.Model(&model.Log{})
+	query := s.db.WithContext(ctx).Model(&model.Log{})
+	if req.CurrentAccountID > 0 {
+		query = query.Where("account_id = ?", req.CurrentAccountID)
+	}
 	if req.RequestPath != "" {
 		query = query.Where("request_path LIKE ?", "%"+req.RequestPath+"%")
 	}
@@ -40,6 +47,9 @@ func (s *LogLogic) List(req *LogListRequest) (*LogListResponse, error) {
 	}
 	if req.RequestMethod != "" {
 		query = query.Where("request_method = ?", req.RequestMethod)
+	}
+	if req.RequestID != "" {
+		query = query.Where("request_id = ?", req.RequestID)
 	}
 
 	if err := query.Count(&total).Error; err != nil {
@@ -54,6 +64,6 @@ func (s *LogLogic) List(req *LogListRequest) (*LogListResponse, error) {
 	return &LogListResponse{Data: logs, Total: total}, nil
 }
 
-func (s *LogLogic) Create(log *model.Log) error {
-	return s.db.Create(log).Error
+func (s *LogLogic) Create(ctx context.Context, log *model.Log) error {
+	return s.db.WithContext(ctx).Create(log).Error
 }

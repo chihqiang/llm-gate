@@ -6,7 +6,7 @@ import (
 	"chihqiang/llm-gate/logic"
 	"chihqiang/llm-gate/middleware"
 
-	"github.com/chihqiang/infra-go/httpx"
+	"github.com/chihqiang/ten-go/rest"
 )
 
 type AuthHandler struct {
@@ -18,32 +18,52 @@ func NewAuthHandler(svc *logic.AuthLogic) *AuthHandler {
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.LoginRequest
-	if err := httpx.MustBindJSON(w, r, &req); err != nil {
+	if err := rest.Bind(r, &req); err != nil {
+		_ = rest.ErrorJSONCtx(r.Context(), w, rest.NewCodeError(rest.StatusOf(err), err.Error()))
 		return
 	}
 
-	resp, err := h.svc.Login(&req)
+	resp, err := h.svc.Login(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		rest.OkJSONCtx(ctx, w, rest.NewCodeError(rest.BusinessCodeError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, resp)
+	rest.OkJSONCtx(ctx, w, resp)
+}
+
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req logic.RefreshRequest
+	if err := rest.Bind(r, &req); err != nil {
+		_ = rest.ErrorJSONCtx(r.Context(), w, rest.NewCodeError(rest.StatusOf(err), err.Error()))
+		return
+	}
+
+	resp, err := h.svc.Refresh(ctx, &req)
+	if err != nil {
+		rest.OkJSONCtx(ctx, w, rest.NewCodeError(rest.BusinessCodeError, err.Error()))
+		return
+	}
+
+	rest.OkJSONCtx(ctx, w, resp)
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
-	account := middleware.AccountFromContext(r.Context())
+	ctx := r.Context()
+	account := middleware.AccountFromContext(ctx)
 	if account == nil {
-		httpx.WriteHTTPError(w, httpx.CodeUnauthorized, "未登录")
+		rest.ErrorJSONCtx(ctx, w, rest.NewCodeError(http.StatusUnauthorized, "未登录"))
 		return
 	}
 
-	profile, err := h.svc.GetProfile(account.ID)
+	profile, err := h.svc.GetProfile(ctx, account.ID, middleware.IsAdmin(ctx))
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		rest.OkJSONCtx(ctx, w, rest.NewCodeError(rest.BusinessCodeError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, profile)
+	rest.OkJSONCtx(ctx, w, profile)
 }

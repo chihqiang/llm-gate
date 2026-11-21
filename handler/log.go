@@ -4,8 +4,9 @@ import (
 	"net/http"
 
 	"chihqiang/llm-gate/logic"
+	"chihqiang/llm-gate/middleware"
 
-	"github.com/chihqiang/infra-go/httpx"
+	"github.com/chihqiang/ten-go/rest"
 )
 
 type LogHandler struct {
@@ -17,16 +18,23 @@ func NewLogHandler(svc *logic.LogLogic) *LogHandler {
 }
 
 func (h *LogHandler) List(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req logic.LogListRequest
-	if err := httpx.MustBindQuery(w, r, &req); err != nil {
+	if err := rest.BindQuery(r, &req); err != nil {
+		_ = rest.ErrorJSONCtx(r.Context(), w, rest.NewCodeError(rest.StatusOf(err), err.Error()))
 		return
 	}
 
-	resp, err := h.svc.List(&req)
+	account := middleware.AccountFromContext(ctx)
+	if account != nil && !middleware.IsAdmin(ctx) {
+		req.CurrentAccountID = account.ID
+	}
+
+	resp, err := h.svc.List(ctx, &req)
 	if err != nil {
-		httpx.OkJSON(w, httpx.NewCodeError(httpx.CodeDefaultError, err.Error()))
+		rest.OkJSONCtx(ctx, w, rest.NewCodeError(rest.BusinessCodeError, err.Error()))
 		return
 	}
 
-	httpx.OkJSON(w, resp)
+	rest.OkJSONCtx(ctx, w, resp)
 }

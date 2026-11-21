@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,10 +11,12 @@ import (
 
 	"chihqiang/llm-gate/logic"
 	"chihqiang/llm-gate/model"
+	"github.com/chihqiang/ten-go/rest/token"
 
-	"github.com/chihqiang/infra-go/httpx"
-	"github.com/chihqiang/infra-go/jwt"
-	"github.com/chihqiang/infra-go/logger"
+	"github.com/chihqiang/ten-go/core/logger"
+	"github.com/chihqiang/ten-go/core/trace"
+	"github.com/chihqiang/ten-go/rest/chain"
+	resthandler "github.com/chihqiang/ten-go/rest/handler"
 )
 
 const (
@@ -53,7 +56,33 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return rw.ResponseWriter.Write(b)
 }
 
-func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) httpx.Middleware {
+var logWorker = newLogWorker()
+
+type logWorkerT struct {
+	jobs chan func()
+}
+
+func newLogWorker() *logWorkerT {
+	w := &logWorkerT{jobs: make(chan func(), 256)}
+	for range 4 {
+		go func() {
+			for job := range w.jobs {
+				job()
+			}
+		}()
+	}
+	return w
+}
+
+func (w *logWorkerT) Submit(job func()) {
+	select {
+	case w.jobs <- job:
+	default:
+		logger.Warn("log worker queue full, dropping log")
+	}
+}
+
+func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) chain.Middleware {
 	skipMethodSet := make(map[string]bool, len(skipMethods))
 	for _, m := range skipMethods {
 		skipMethodSet[strings.ToUpper(m)] = true
@@ -77,7 +106,11 @@ func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) ht
 			var reqBody []byte
 			if r.Body != nil {
 				limitedBody := io.LimitReader(r.Body, maxReqBodySize+1)
-				reqBody, _ = io.ReadAll(limitedBody)
+				var readErr error
+				reqBody, readErr = io.ReadAll(limitedBody)
+				if readErr != nil {
+					logger.WarnCtx(r.Context(), "log: read request body failed", logger.Err(readErr))
+				}
 				if len(reqBody) > maxReqBodySize {
 					reqBody = reqBody[:maxReqBodySize]
 				}
@@ -91,12 +124,13 @@ func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) ht
 
 			var accountID int64
 			var accountName string
-			if claims := jwt.ClaimsFromContext(r.Context()); claims != nil {
-				if id, ok := claims[jwt.ClaimKeyUserID].(float64); ok {
+			if idVal, ok := token.Claim(r.Context(), logic.ClaimKeyUserID); ok {
+				if id, ok := idVal.(float64); ok {
 					accountID = int64(id)
 				}
-				name, ok := claims[jwt.ClaimKeyUsername].(string)
-				if ok {
+			}
+			if nameVal, ok := token.Claim(r.Context(), logic.ClaimKeyUsername); ok {
+				if name, ok := nameVal.(string); ok {
 					accountName = name
 				}
 			}
@@ -104,23 +138,36 @@ func Log(logLogic *logic.LogLogic, skipRoutes []string, skipMethods []string) ht
 			ua := r.UserAgent()
 			browser, os := parseUserAgent(ua)
 
-			go func() {
-				if err := logLogic.Create(&model.Log{
-					RequestPath:    r.RequestURI,
-					RequestMethod:  r.Method,
-					ResponseCode:   rw.status,
-					RequestPayload: sanitizePayload(string(reqBody)),
-					RequestIP:      getClientIP(r),
+			reqURI := r.RequestURI
+			reqMethod := r.Method
+			reqIP := getClientIP(r)
+			respStatus := rw.status
+			respBody := rw.body.String()
+			reqPayload := sanitizePayload(string(reqBody))
+			// 在请求期间捕获 context，供后台 worker 记录链路信息（值可安全读取）
+			// 用 WithoutCancel 保留 trace/request_id 等值，同时避免请求取消中断 DB 写入
+			traceCtx := context.WithoutCancel(r.Context())
+			reqID, _ := resthandler.RequestIDFromContext(traceCtx)
+
+			logWorker.Submit(func() {
+				if err := logLogic.Create(traceCtx, &model.Log{
+					RequestPath:    reqURI,
+					RequestMethod:  reqMethod,
+					ResponseCode:   respStatus,
+					RequestPayload: reqPayload,
+					RequestIP:      reqIP,
 					RequestOS:      os,
 					RequestBrowser: browser,
-					ResponseJSON:   truncateString(rw.body.String(), maxRespBodySize),
+					ResponseJSON:   truncateString(respBody, maxRespBodySize),
 					ProcessTime:    duration.Milliseconds(),
+					RequestID:      reqID,
+					TraceID:        trace.TraceIDFromContext(traceCtx),
 					AccountID:      accountID,
 					AccountName:    accountName,
 				}); err != nil {
-					logger.Error("create log failed", logger.Err(err))
+					logger.ErrorCtx(traceCtx, "create log failed", logger.Err(err))
 				}
-			}()
+			})
 		}
 	}
 }
@@ -165,14 +212,16 @@ func parseOS(ua string) string {
 		return "Windows 7"
 	case strings.Contains(ua, "Windows"):
 		return "Windows"
-	case strings.Contains(ua, "Mac OS X"):
-		if idx := strings.Index(ua, "Mac OS X"); idx >= 0 {
-			end := strings.Index(ua[idx:], ")")
-			if end > 0 {
-				return strings.ReplaceAll(ua[idx:idx+end], "_", ".")
+	case strings.Contains(ua, "iPhone OS"):
+		if idx := strings.Index(ua, "iPhone OS"); idx >= 0 {
+			parts := strings.SplitN(ua[idx:], " ", 4)
+			if len(parts) >= 3 {
+				return "iPhone OS " + strings.ReplaceAll(parts[2], "_", ".")
 			}
 		}
-		return "Mac OS X"
+		return "iOS"
+	case strings.Contains(ua, "iPad"):
+		return "iPadOS"
 	case strings.Contains(ua, "Android"):
 		if idx := strings.Index(ua, "Android"); idx >= 0 {
 			rest := ua[idx:]
@@ -183,16 +232,14 @@ func parseOS(ua string) string {
 			return rest
 		}
 		return "Android"
-	case strings.Contains(ua, "iPhone OS"):
-		if idx := strings.Index(ua, "iPhone OS"); idx >= 0 {
-			end := strings.Index(ua[idx:], " ")
+	case strings.Contains(ua, "Mac OS X"):
+		if idx := strings.Index(ua, "Mac OS X"); idx >= 0 {
+			end := strings.Index(ua[idx:], ")")
 			if end > 0 {
-				return ua[idx : idx+end]
+				return strings.ReplaceAll(ua[idx:idx+end], "_", ".")
 			}
 		}
-		return "iOS"
-	case strings.Contains(ua, "iPad"):
-		return "iPadOS"
+		return "Mac OS X"
 	case strings.Contains(ua, "Linux"):
 		return "Linux"
 	case strings.Contains(ua, "CrOS"):
@@ -249,7 +296,10 @@ func sanitizePayload(payload string) string {
 		}
 	}
 
-	b, _ := json.Marshal(raw)
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return truncateString(payload, 4096)
+	}
 	return string(b)
 }
 
